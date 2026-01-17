@@ -1,0 +1,248 @@
+import { Router } from "express";
+import { prisma } from "../prisma.js";
+import { requireAuth, requireRole } from "../auth/middleware.js";
+
+export const providerRouter = Router();
+
+// получить профиль провайдера по текущему пользователю
+async function getProviderProfile(userId) {
+  return prisma.providerProfile.findUnique({ where: { userId } });
+}
+
+// список заявок провайдера
+providerRouter.get("/orders", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const pp = await getProviderProfile(req.session.user.id);
+  if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+
+  const orders = await prisma.order.findMany({
+    where: { providerId: pp.id },
+    include: {
+      customer: { select: { id: true, email: true, displayName: true } },
+      items: { include: { service: true } }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  res.json({
+    orders: orders.map((o) => ({
+      id: o.id,
+      status: o.status,
+      createdAt: o.createdAt,
+      customer: o.customer,
+      items: o.items.map((it) => ({
+        serviceTitle: it.service.title,
+        qty: it.qty
+      }))
+    }))
+  });
+});
+
+// детали заявки для провайдера
+providerRouter.get("/orders/:id", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const pp = await getProviderProfile(req.session.user.id);
+  if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+
+  const id = req.params.id;
+  const order = await prisma.order.findFirst({
+    where: { id, providerId: pp.id },
+    include: {
+      customer: { select: { id: true, email: true, displayName: true } },
+      items: { include: { service: true } },
+      statusHistory: { orderBy: { createdAt: "asc" } },
+      documents: { orderBy: { createdAt: "desc" } }
+    }
+  });
+
+  if (!order) return res.status(404).json({ error: "NOT_FOUND" });
+
+  res.json({
+    order: {
+      id: order.id,
+      status: order.status,
+      createdAt: order.createdAt,
+      customer: order.customer,
+      items: order.items.map((it) => ({
+        serviceId: it.serviceId,
+        title: it.service.title,
+        qty: it.qty
+      })),
+      statusHistory: order.statusHistory.map((h) => ({
+        fromStatus: h.fromStatus,
+        toStatus: h.toStatus,
+        comment: h.comment,
+        createdAt: h.createdAt
+      })),
+      documents: order.documents.map((d) => ({
+        id: d.id,
+        fileName: d.fileName,
+        size: d.size,
+        mimeType: d.mimeType,
+        createdAt: d.createdAt,
+        uploadedByUserId: d.uploadedByUserId
+      }))
+    }
+  });
+});
+
+// смена статуса заявки
+providerRouter.post("/orders/:id/status", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const { toStatus, comment } = req.body ?? {};
+  if (!toStatus) return res.status(400).json({ error: "toStatus required" });
+
+  const pp = await getProviderProfile(req.session.user.id);
+  if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+
+  const id = req.params.id;
+  const order = await prisma.order.findFirst({
+    where: { id, providerId: pp.id }
+  });
+  if (!order) return res.status(404).json({ error: "NOT_FOUND" });
+
+  const updated = await prisma.order.update({
+    where: { id },
+    data: {
+      status: toStatus,
+      statusHistory: {
+        create: {
+          changedByUserId: req.session.user.id,
+          fromStatus: order.status,
+          toStatus,
+          comment: comment || null
+        }
+      }
+    }
+  });
+
+  res.json({ ok: true, status: updated.status });
+});
+
+// список своих услуг
+providerRouter.get("/services", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const pp = await getProviderProfile(req.session.user.id);
+  if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+
+  const services = await prisma.service.findMany({
+  where: { providerId: pp.id },
+  include: {
+    tags: {
+      include: {
+        tag: true
+      }
+    }
+  },
+  orderBy: { createdAt: "desc" }
+});
+
+
+  res.json({ services });
+});
+
+// создать услугу
+providerRouter.post("/services", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const pp = await getProviderProfile(req.session.user.id);
+  if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+
+  const { internalCode, title, description, priceFrom, etaDaysFrom, imageUrl, isActive } = req.body ?? {};
+  if (!internalCode || !title || !description) {
+    return res.status(400).json({ error: "internalCode/title/description required" });
+  }
+
+  try {
+    const service = await prisma.service.create({
+      data: {
+        providerId: pp.id,
+        internalCode,
+        title,
+        description,
+        priceFrom: priceFrom == null ? null : Number(priceFrom),
+        etaDaysFrom: etaDaysFrom == null ? null : Number(etaDaysFrom),
+        imageUrl: imageUrl || null,
+        isActive: isActive == null ? true : Boolean(isActive)
+      }
+    });
+    res.json({ service });
+  } catch (e) {
+    // уникальность internalCode внутри провайдера
+    return res.status(409).json({ error: "SERVICE_CODE_ALREADY_EXISTS" });
+  }
+});
+
+// обновить услугу
+providerRouter.patch("/services/:id", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const pp = await getProviderProfile(req.session.user.id);
+  if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+
+  const id = req.params.id;
+  const existing = await prisma.service.findFirst({ where: { id, providerId: pp.id } });
+  if (!existing) return res.status(404).json({ error: "NOT_FOUND" });
+
+  const patch = req.body ?? {};
+  const data = {
+    ...(patch.internalCode != null ? { internalCode: patch.internalCode } : {}),
+    ...(patch.title != null ? { title: patch.title } : {}),
+    ...(patch.description != null ? { description: patch.description } : {}),
+    ...(patch.priceFrom !== undefined ? { priceFrom: patch.priceFrom === null ? null : Number(patch.priceFrom) } : {}),
+    ...(patch.etaDaysFrom !== undefined ? { etaDaysFrom: patch.etaDaysFrom === null ? null : Number(patch.etaDaysFrom) } : {}),
+    ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl ? String(patch.imageUrl) : null } : {}),
+    ...(patch.isActive !== undefined ? { isActive: Boolean(patch.isActive) } : {})
+  };
+
+  try {
+    const service = await prisma.service.update({ where: { id }, data });
+    res.json({ service });
+  } catch {
+    return res.status(409).json({ error: "SERVICE_CODE_ALREADY_EXISTS" });
+  }
+});
+
+// удалить услугу (мягко) — выключаем
+providerRouter.delete("/services/:id", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const pp = await getProviderProfile(req.session.user.id);
+  if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+
+  const id = req.params.id;
+  const existing = await prisma.service.findFirst({ where: { id, providerId: pp.id } });
+  if (!existing) return res.status(404).json({ error: "NOT_FOUND" });
+
+  await prisma.service.update({ where: { id }, data: { isActive: false } });
+  res.json({ ok: true });
+});
+
+providerRouter.get("/tags", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const tags = await prisma.tag.findMany({ orderBy: { name: "asc" } });
+  res.json({ tags });
+});
+
+providerRouter.post("/tags", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const { name, slug } = req.body ?? {};
+  if (!name || !slug) return res.status(400).json({ error: "name/slug required" });
+
+  try {
+    const tag = await prisma.tag.create({ data: { name, slug } });
+    res.json({ tag });
+  } catch {
+    res.status(409).json({ error: "TAG_EXISTS" });
+  }
+});
+
+providerRouter.put("/services/:id/tags", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const pp = await getProviderProfile(req.session.user.id);
+  if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+
+  const id = req.params.id;
+  const { tagIds } = req.body ?? {};
+  if (!Array.isArray(tagIds)) return res.status(400).json({ error: "tagIds required" });
+
+  const service = await prisma.service.findFirst({ where: { id, providerId: pp.id } });
+  if (!service) return res.status(404).json({ error: "NOT_FOUND" });
+
+  // удаляем старые связи, добавляем новые
+  await prisma.serviceTag.deleteMany({ where: { serviceId: id } });
+  if (tagIds.length > 0) {
+    await prisma.serviceTag.createMany({
+      data: tagIds.map((tagId) => ({ serviceId: id, tagId }))
+    });
+  }
+
+  res.json({ ok: true });
+});

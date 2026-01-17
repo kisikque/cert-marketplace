@@ -1,0 +1,12 @@
+{
+  "name": "cert-marketplace",
+  "private": true,
+  "workspaces": ["backend", "frontend"],
+  "scripts": {
+    "dev": "npm -w backend run dev & npm -w frontend run dev",
+    "build": "npm -w frontend run build && npm -w backend run copy:frontend",
+    "start": "npm -w backend start",
+    "db:migrate": "npm -w backend run db:migrate",
+    "db:seed": "npm -w backend run db:seed"
+  }
+}
