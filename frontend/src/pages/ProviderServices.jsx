@@ -11,6 +11,12 @@ const PROVIDER_DOCUMENT_TYPES = [
 
 const API_BASE = "http://localhost:3001";
 
+const PROVIDER_DOCUMENT_TYPES = [
+  { value: "REGISTRATION_DOC", label: "Регистрационный документ" },
+  { value: "TAX_DOC", label: "ИНН / налоговый документ" },
+  { value: "OTHER", label: "Другой документ" }
+];
+
 function getServiceTagIds(service) {
   return (service.tags || []).map((x) => x.tag?.id).filter(Boolean);
 }
@@ -32,6 +38,7 @@ export default function ProviderServices() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [error, setError] = useState(null);
+  const [uploadingVerificationDoc, setUploadingVerificationDoc] = useState(false);
 
   const [internalCode, setInternalCode] = useState("");
   const [title, setTitle] = useState("");
