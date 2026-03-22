@@ -77,7 +77,7 @@ authRouter.post("/register", async (req, res) => {
   }
 
   if (accountType === "PROVIDER") {
-    if (!displayName || !orgName || !inn || !phone || !address) {
+    if (!displayName || !orgName || !inn) {
       return res.status(400).json({ error: "provider fields required" });
     }
   }

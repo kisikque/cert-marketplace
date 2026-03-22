@@ -36,11 +36,11 @@ model User {
   displayName  String?
   isDeleted    Boolean  @default(false)
 
-  providerProfile         ProviderProfile?
-  orders                  Order[]                        @relation("CustomerOrders")
-  statusChanges           OrderStatusHistory[]           @relation("StatusChangedBy")
-  uploadedDocs            OrderDocument[]                @relation("DocUploadedBy")
-  uploadedProviderDocs    ProviderVerificationDocument[] @relation("ProviderDocUploadedBy")
+  providerProfile      ProviderProfile?
+  orders               Order[]                        @relation("CustomerOrders")
+  statusChanges        OrderStatusHistory[]           @relation("StatusChangedBy")
+  uploadedDocs         OrderDocument[]                @relation("DocUploadedBy")
+  uploadedProviderDocs ProviderVerificationDocument[] @relation("ProviderDocUploadedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -55,15 +55,17 @@ model ProviderProfile {
   inn                 String?
   phone               String?
   address             String?
+  website             String?
   description         String?
-  publicSlug          String?             @unique
-  verificationStatus  VerificationStatus  @default(PENDING)
+  logoUrl             String?
+  publicSlug          String?            @unique
+  verificationStatus  VerificationStatus @default(PENDING)
   verificationComment String?
   submittedAt         DateTime?
   verifiedAt          DateTime?
 
-  services             Service[]
-  orders               Order[]
+  services              Service[]
+  orders                Order[]
   verificationDocuments ProviderVerificationDocument[]
 
   createdAt DateTime @default(now())
@@ -71,7 +73,7 @@ model ProviderProfile {
 }
 
 model ProviderVerificationDocument {
-  id                String          @id @default(cuid())
+  id                String @id @default(cuid())
   providerProfileId String
   uploadedByUserId  String
 
@@ -91,9 +93,9 @@ model ProviderVerificationDocument {
 }
 
 model Service {
-  id          String @id @default(cuid())
-  providerId  String
-  provider    ProviderProfile @relation(fields: [providerId], references: [id])
+  id         String @id @default(cuid())
+  providerId String
+  provider   ProviderProfile @relation(fields: [providerId], references: [id])
 
   internalCode String
   title        String
@@ -157,14 +159,14 @@ model Order {
 }
 
 model OrderItem {
-  id      String @id @default(cuid())
-  orderId String
+  id        String @id @default(cuid())
+  orderId   String
   serviceId String
 
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   service Service @relation(fields: [serviceId], references: [id])
 
-  qty            Int @default(1)
+  qty             Int @default(1)
   priceAtPurchase Int?
 
   createdAt DateTime @default(now())
@@ -192,12 +194,12 @@ model OrderStatusHistory {
 }
 
 model OrderDocument {
-  id              String @id @default(cuid())
-  orderId         String
+  id               String @id @default(cuid())
+  orderId          String
   uploadedByUserId String
 
-  order       Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  uploadedBy  User  @relation("DocUploadedBy", fields: [uploadedByUserId], references: [id])
+  order      Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  uploadedBy User  @relation("DocUploadedBy", fields: [uploadedByUserId], references: [id])
 
   fileName    String
   mimeType    String

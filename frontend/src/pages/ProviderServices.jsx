@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { apiFetch, apiUpload } from "../api";
 import { useAuthContext } from "../AuthContext";
-import { useNavigate } from "react-router-dom";
+
+const PROVIDER_DOCUMENT_TYPES = [
+  { value: "REGISTRATION_DOC", label: "Регистрационный документ" },
+  { value: "TAX_DOC", label: "ИНН / налоговый документ" },
+  { value: "OTHER", label: "Другой документ" }
+];
+
+const API_BASE = "http://localhost:3001";
 
 const PROVIDER_DOCUMENT_TYPES = [
   { value: "REGISTRATION_DOC", label: "Регистрационный документ" },
@@ -21,8 +29,14 @@ export default function ProviderServices() {
   const [allTags, setAllTags] = useState([]);
   const [verificationDocuments, setVerificationDocuments] = useState([]);
   const [verificationMeta, setVerificationMeta] = useState(null);
+  const [profile, setProfile] = useState(null);
+
   const [verificationDocType, setVerificationDocType] = useState(PROVIDER_DOCUMENT_TYPES[0].value);
   const [verificationFile, setVerificationFile] = useState(null);
+  const [logoFile, setLogoFile] = useState(null);
+  const [uploadingVerificationDoc, setUploadingVerificationDoc] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [error, setError] = useState(null);
   const [uploadingVerificationDoc, setUploadingVerificationDoc] = useState(false);
 
@@ -31,6 +45,15 @@ export default function ProviderServices() {
   const [description, setDescription] = useState("");
   const [priceFrom, setPriceFrom] = useState("");
   const [etaDaysFrom, setEtaDaysFrom] = useState("");
+
+  const [profileForm, setProfileForm] = useState({
+    orgName: "",
+    inn: "",
+    description: "",
+    website: "",
+    phone: "",
+    address: ""
+  });
 
   const [tagEditorId, setTagEditorId] = useState(null);
   const [selectedTagIds, setSelectedTagIds] = useState([]);
@@ -43,15 +66,26 @@ export default function ProviderServices() {
   async function load() {
     setError(null);
     try {
-      const [s, t, v] = await Promise.all([
+      const [servicesData, tagsData, verificationData, profileData] = await Promise.all([
         apiFetch("/provider/services"),
         apiFetch("/provider/tags"),
-        apiFetch("/provider-verification-docs/me")
+        apiFetch("/provider-verification-docs/me"),
+        apiFetch("/provider/profile")
       ]);
-      setServices(s.services || []);
-      setAllTags(t.tags || []);
-      setVerificationDocuments(v.documents || []);
-      setVerificationMeta(v.providerProfile || null);
+
+      setServices(servicesData.services || []);
+      setAllTags(tagsData.tags || []);
+      setVerificationDocuments(verificationData.documents || []);
+      setVerificationMeta(verificationData.providerProfile || null);
+      setProfile(profileData.profile || null);
+      setProfileForm({
+        orgName: profileData.profile?.orgName || "",
+        inn: profileData.profile?.inn || "",
+        description: profileData.profile?.description || "",
+        website: profileData.profile?.website || "",
+        phone: profileData.profile?.phone || "",
+        address: profileData.profile?.address || ""
+      });
     } catch (e) {
       setError(e?.error || "Не удалось загрузить данные");
     }
@@ -171,12 +205,137 @@ export default function ProviderServices() {
     }
   }
 
+  async function saveProfile(e) {
+    e.preventDefault();
+    setSavingProfile(true);
+    setError(null);
+    try {
+      await apiFetch("/provider/profile", {
+        method: "PATCH",
+        body: JSON.stringify(profileForm)
+      });
+      await refresh?.();
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось сохранить профиль провайдера");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function uploadLogo(e) {
+    e.preventDefault();
+    if (!logoFile) {
+      setError("Выберите логотип");
+      return;
+    }
+
+    setUploadingLogo(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", logoFile);
+      await apiUpload("/provider/profile/logo", fd);
+      setLogoFile(null);
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось загрузить логотип");
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
+  async function removeLogo() {
+    try {
+      await apiFetch("/provider/profile/logo", { method: "DELETE" });
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось удалить логотип");
+    }
+  }
+
   if (!user || user.role !== "PROVIDER") return null;
 
   return (
     <div style={{ maxWidth: 980 }}>
       <h2>Мои услуги</h2>
       {error && <p style={{ color: "crimson" }}>{String(error)}</p>}
+
+      {profile && (
+        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14, marginBottom: 16, display: "grid", gap: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Публичный профиль провайдера</h3>
+              <div style={{ fontSize: 13, opacity: 0.75 }}>
+                Заполните данные компании, которые увидит покупатель на вашей публичной странице.
+              </div>
+            </div>
+            {profile.publicSlug && verificationMeta?.verificationStatus === "APPROVED" && (
+              <Link to={`/providers/${profile.publicSlug}`} target="_blank" rel="noreferrer">
+                Открыть публичный профиль
+              </Link>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ width: 120, display: "grid", gap: 10 }}>
+              <div
+                style={{
+                  width: 120,
+                  height: 120,
+                  borderRadius: 24,
+                  overflow: "hidden",
+                  border: "1px solid #ddd",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "#fafafa"
+                }}
+              >
+                {profile.logoUrl ? (
+                  <img src={`${API_BASE}${profile.logoUrl}`} alt={profile.orgName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span style={{ fontSize: 32, opacity: 0.35 }}>{profile.orgName?.slice(0, 1) || "P"}</span>
+                )}
+              </div>
+              <form onSubmit={uploadLogo} style={{ display: "grid", gap: 8 }}>
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
+                <button type="submit" disabled={uploadingLogo}>{uploadingLogo ? "Загрузка..." : "Загрузить логотип"}</button>
+              </form>
+              {profile.logoUrl && <button onClick={removeLogo}>Удалить логотип</button>}
+              <div style={{ fontSize: 12, opacity: 0.7 }}>PNG/JPG/WEBP, до 2 MB. Рекомендуемый размер 400×400 px.</div>
+            </div>
+
+            <form onSubmit={saveProfile} style={{ flex: 1, display: "grid", gap: 8, minWidth: 280 }}>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Название компании</span>
+                <input value={profileForm.orgName} onChange={(e) => setProfileForm((prev) => ({ ...prev, orgName: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>ИНН</span>
+                <input value={profileForm.inn} onChange={(e) => setProfileForm((prev) => ({ ...prev, inn: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Описание</span>
+                <textarea rows={4} value={profileForm.description} onChange={(e) => setProfileForm((prev) => ({ ...prev, description: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Сайт</span>
+                <input value={profileForm.website} onChange={(e) => setProfileForm((prev) => ({ ...prev, website: e.target.value }))} placeholder="https://example.com" />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Телефон</span>
+                <input value={profileForm.phone} onChange={(e) => setProfileForm((prev) => ({ ...prev, phone: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Адрес</span>
+                <input value={profileForm.address} onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))} />
+              </label>
+              <button type="submit" disabled={savingProfile}>{savingProfile ? "Сохраняем..." : "Сохранить профиль"}</button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {verificationMeta && (
         <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14, marginBottom: 16, display: "grid", gap: 10 }}>
@@ -190,7 +349,7 @@ export default function ProviderServices() {
           )}
           {verificationMeta.verificationStatus !== "APPROVED" && (
             <div style={{ fontSize: 14 }}>
-              Пока верификация не подтверждена, новые услуги будут создаваться неактивными.
+              Пока верификация не подтверждена, новые услуги будут создаваться неактивными и публичный профиль будет скрыт от покупателей.
             </div>
           )}
 
@@ -215,17 +374,13 @@ export default function ProviderServices() {
             <ul style={{ margin: 0, paddingLeft: 18 }}>
               {verificationDocuments.map((doc) => (
                 <li key={doc.id} style={{ marginBottom: 8 }}>
-                  <a
-                    href={`http://localhost:3001/api/provider-verification-docs/${doc.id}/download`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
+                  <a href={`http://localhost:3001/api/provider-verification-docs/${doc.id}/download`} target="_blank" rel="noreferrer">
                     {doc.fileName}
                   </a>{" "}
                   <span style={{ fontSize: 13, opacity: 0.75 }}>
                     ({doc.documentType || "без типа"}, {Math.round(doc.size / 1024)} KB)
                   </span>
-                  <button style={{ marginLeft: 8 }} onClick={() => removeVerificationDocument(doc.id)}>
+                  <button type="button" style={{ marginLeft: 8 }} onClick={() => removeVerificationDocument(doc.id)}>
                     Удалить
                   </button>
                 </li>
@@ -266,7 +421,7 @@ export default function ProviderServices() {
               <div style={{ fontWeight: 700 }}>{currentService.title}</div>
               <div style={{ marginTop: 8 }}>Теги:</div>
             </div>
-            <button onClick={() => setTagEditorId(null)}>Закрыть</button>
+            <button type="button" onClick={() => setTagEditorId(null)}>Закрыть</button>
           </div>
 
           {allTags.length === 0 ? (
@@ -293,7 +448,7 @@ export default function ProviderServices() {
           )}
 
           <div style={{ marginTop: 12 }}>
-            <button disabled={savingTags} onClick={saveTags}>
+            <button type="button" disabled={savingTags} onClick={saveTags}>
               {savingTags ? "Сохраняем..." : "Сохранить теги"}
             </button>
           </div>
@@ -325,11 +480,11 @@ export default function ProviderServices() {
               </div>
 
               <div style={{ marginTop: 8 }}>
-                <button onClick={() => openTagEditor(service)}>Теги</button>
-                <button onClick={() => toggleActive(service)} style={{ marginLeft: 8 }}>
+                <button type="button" onClick={() => openTagEditor(service)}>Теги</button>
+                <button type="button" onClick={() => toggleActive(service)} style={{ marginLeft: 8 }}>
                   {service.isActive ? "Выключить" : "Включить"}
                 </button>
-                <button onClick={() => softDelete(service.id)} style={{ marginLeft: 8 }}>
+                <button type="button" onClick={() => softDelete(service.id)} style={{ marginLeft: 8 }}>
                   Удалить
                 </button>
               </div>

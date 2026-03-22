@@ -7,6 +7,7 @@ import { tagsRouter } from "./tags/routes.js";
 import { sessionMiddleware } from "./auth/session.js";
 import { authRouter } from "./auth/routes.js";
 import { servicesRouter } from "./services/routes.js";
+import { providersRouter } from "./providers/routes.js";
 import { ordersRouter } from "./orders/routes.js";
 import { documentsRouter } from "./documents/routes.js";
 import { providerRouter } from "./provider/routes.js";
@@ -30,11 +31,13 @@ app.use(
 
 app.use(express.json());
 app.use(sessionMiddleware());
+app.use("/provider-logos", express.static(path.resolve("provider-logos")));
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 app.use("/api/auth", authRouter);
 app.use("/api/services", servicesRouter);
+app.use("/api/providers", providersRouter);
 app.use("/api/documents", documentsRouter);
 app.use("/api/tags", tagsRouter);
 app.use("/api/orders", ordersRouter);
@@ -42,11 +45,9 @@ app.use("/api/provider", providerRouter);
 app.use("/api/provider-verification-docs", providerVerificationRouter);
 app.use("/api/admin", adminRouter);
 
-// Статика фронта (позже, после build)
 const publicDir = path.join(__dirname, "..", "public");
 app.use(express.static(publicDir));
 
-// Если фронт собран — отдаём index.html
 app.get("*", (req, res) => {
   res.sendFile(path.join(publicDir, "index.html"), (err) => {
     if (err) res.status(404).send("Not Found");
@@ -55,6 +56,9 @@ app.get("*", (req, res) => {
 
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
+  if (err?.message === "INVALID_LOGO_FILE_TYPE") {
+    return res.status(400).json({ error: "INVALID_LOGO_FILE_TYPE" });
+  }
   res.status(500).json({ error: "INTERNAL_ERROR" });
 });
 
