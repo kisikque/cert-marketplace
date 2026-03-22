@@ -1,18 +1,45 @@
 import { prisma } from "../prisma.js";
 
+async function buildSessionUser(id) {
+  const dbUser = await prisma.user.findUnique({
+    where: { id },
+    include: {
+      providerProfile: {
+        select: {
+          id: true,
+          orgName: true,
+          verificationStatus: true,
+          verificationComment: true
+        }
+      }
+    }
+  });
+
+  if (!dbUser || dbUser.isDeleted) return null;
+
+  return {
+    id: dbUser.id,
+    email: dbUser.email,
+    role: dbUser.role,
+    displayName: dbUser.displayName,
+    providerProfileId: dbUser.providerProfile?.id ?? null,
+    providerOrgName: dbUser.providerProfile?.orgName ?? null,
+    providerVerificationStatus: dbUser.providerProfile?.verificationStatus ?? null,
+    providerVerificationComment: dbUser.providerProfile?.verificationComment ?? null
+  };
+}
+
 export async function requireAuth(req, res, next) {
   const sessUser = req.session?.user;
   if (!sessUser?.id) return res.status(401).json({ error: "UNAUTHORIZED" });
 
-  const dbUser = await prisma.user.findUnique({ where: { id: sessUser.id } });
-  if (!dbUser || dbUser.isDeleted) {
-    // сессия протухла (например, после seed)
+  const freshUser = await buildSessionUser(sessUser.id);
+  if (!freshUser) {
     req.session.destroy(() => {});
     return res.status(401).json({ error: "SESSION_EXPIRED" });
   }
 
-  // можно обновить displayName/role в сессии на актуальные
-  req.session.user = { id: dbUser.id, email: dbUser.email, role: dbUser.role, displayName: dbUser.displayName };
+  req.session.user = freshUser;
   next();
 }
 
@@ -24,4 +51,3 @@ export function requireRole(roles) {
     next();
   };
 }
-

@@ -1,15 +1,124 @@
+import fs from "fs";
+import multer from "multer";
+import path from "path";
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { requireAuth, requireRole } from "../auth/middleware.js";
 
 export const providerRouter = Router();
 
-// получить профиль провайдера по текущему пользователю
+const logoUploadDir = path.resolve("provider-logos");
+if (!fs.existsSync(logoUploadDir)) fs.mkdirSync(logoUploadDir, { recursive: true });
+
+const logoStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, logoUploadDir),
+  filename: (req, file, cb) => {
+    const safe = file.originalname.replace(/[^\w.\-() ]+/g, "_");
+    const unique = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    cb(null, `${unique}__${safe}`);
+  }
+});
+
+const logoUpload = multer({
+  storage: logoStorage,
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (["image/png", "image/jpeg", "image/webp"].includes(file.mimetype)) cb(null, true);
+    else cb(new Error("INVALID_LOGO_FILE_TYPE"));
+  }
+});
+
+function canPublishServices(providerProfile) {
+  return providerProfile.verificationStatus === "APPROVED";
+}
+
+function normalizeOptionalString(value) {
+  const normalized = String(value || "").trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeWebsite(value) {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized) return null;
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  return `https://${normalized}`;
+}
+
 async function getProviderProfile(userId) {
   return prisma.providerProfile.findUnique({ where: { userId } });
 }
 
-// список заявок провайдера
+async function removeLogoIfPresent(logoUrl) {
+  if (!logoUrl) return;
+  const fileName = logoUrl.split("/").pop();
+  if (!fileName) return;
+  const filePath = path.join(logoUploadDir, fileName);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+}
+
+providerRouter.get("/profile", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const profile = await getProviderProfile(req.session.user.id);
+  if (!profile) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+
+  res.json({ profile });
+});
+
+providerRouter.patch("/profile", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const profile = await getProviderProfile(req.session.user.id);
+  if (!profile) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+
+  const patch = req.body ?? {};
+  const data = {
+    ...(patch.orgName != null ? { orgName: String(patch.orgName).trim() } : {}),
+    ...(patch.description !== undefined ? { description: normalizeOptionalString(patch.description) } : {}),
+    ...(patch.website !== undefined ? { website: normalizeWebsite(patch.website) } : {}),
+    ...(patch.phone !== undefined ? { phone: normalizeOptionalString(patch.phone) } : {}),
+    ...(patch.address !== undefined ? { address: normalizeOptionalString(patch.address) } : {}),
+    ...(patch.inn !== undefined ? { inn: normalizeOptionalString(patch.inn) } : {})
+  };
+
+  const updated = await prisma.providerProfile.update({
+    where: { id: profile.id },
+    data
+  });
+
+  res.json({ profile: updated });
+});
+
+providerRouter.post(
+  "/profile/logo",
+  requireAuth,
+  requireRole(["PROVIDER"]),
+  logoUpload.single("file"),
+  async (req, res) => {
+    const profile = await getProviderProfile(req.session.user.id);
+    if (!profile) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+    if (!req.file) return res.status(400).json({ error: "file required" });
+
+    await removeLogoIfPresent(profile.logoUrl);
+    const logoUrl = `/provider-logos/${req.file.filename}`;
+    const updated = await prisma.providerProfile.update({
+      where: { id: profile.id },
+      data: { logoUrl }
+    });
+
+    res.json({ profile: updated });
+  }
+);
+
+providerRouter.delete("/profile/logo", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+  const profile = await getProviderProfile(req.session.user.id);
+  if (!profile) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
+
+  await removeLogoIfPresent(profile.logoUrl);
+  const updated = await prisma.providerProfile.update({
+    where: { id: profile.id },
+    data: { logoUrl: null }
+  });
+
+  res.json({ profile: updated });
+});
+
 providerRouter.get("/orders", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
@@ -37,14 +146,12 @@ providerRouter.get("/orders", requireAuth, requireRole(["PROVIDER"]), async (req
   });
 });
 
-// детали заявки для провайдера
 providerRouter.get("/orders/:id", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
 
-  const id = req.params.id;
   const order = await prisma.order.findFirst({
-    where: { id, providerId: pp.id },
+    where: { id: req.params.id, providerId: pp.id },
     include: {
       customer: { select: { id: true, email: true, displayName: true } },
       items: { include: { service: true } },
@@ -84,7 +191,6 @@ providerRouter.get("/orders/:id", requireAuth, requireRole(["PROVIDER"]), async 
   });
 });
 
-// смена статуса заявки
 providerRouter.post("/orders/:id/status", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
   const { toStatus, comment } = req.body ?? {};
   if (!toStatus) return res.status(400).json({ error: "toStatus required" });
@@ -92,14 +198,13 @@ providerRouter.post("/orders/:id/status", requireAuth, requireRole(["PROVIDER"])
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
 
-  const id = req.params.id;
   const order = await prisma.order.findFirst({
-    where: { id, providerId: pp.id }
+    where: { id: req.params.id, providerId: pp.id }
   });
   if (!order) return res.status(404).json({ error: "NOT_FOUND" });
 
   const updated = await prisma.order.update({
-    where: { id },
+    where: { id: req.params.id },
     data: {
       status: toStatus,
       statusHistory: {
@@ -116,28 +221,25 @@ providerRouter.post("/orders/:id/status", requireAuth, requireRole(["PROVIDER"])
   res.json({ ok: true, status: updated.status });
 });
 
-// список своих услуг
 providerRouter.get("/services", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
 
   const services = await prisma.service.findMany({
-  where: { providerId: pp.id },
-  include: {
-    tags: {
-      include: {
-        tag: true
+    where: { providerId: pp.id },
+    include: {
+      tags: {
+        include: {
+          tag: true
+        }
       }
-    }
-  },
-  orderBy: { createdAt: "desc" }
-});
-
+    },
+    orderBy: { createdAt: "desc" }
+  });
 
   res.json({ services });
 });
 
-// создать услугу
 providerRouter.post("/services", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
@@ -157,26 +259,27 @@ providerRouter.post("/services", requireAuth, requireRole(["PROVIDER"]), async (
         priceFrom: priceFrom == null ? null : Number(priceFrom),
         etaDaysFrom: etaDaysFrom == null ? null : Number(etaDaysFrom),
         imageUrl: imageUrl || null,
-        isActive: isActive == null ? true : Boolean(isActive)
+        isActive: isActive == null ? canPublishServices(pp) : canPublishServices(pp) && Boolean(isActive)
       }
     });
     res.json({ service });
-  } catch (e) {
-    // уникальность internalCode внутри провайдера
+  } catch {
     return res.status(409).json({ error: "SERVICE_CODE_ALREADY_EXISTS" });
   }
 });
 
-// обновить услугу
 providerRouter.patch("/services/:id", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
 
-  const id = req.params.id;
-  const existing = await prisma.service.findFirst({ where: { id, providerId: pp.id } });
+  const existing = await prisma.service.findFirst({ where: { id: req.params.id, providerId: pp.id } });
   if (!existing) return res.status(404).json({ error: "NOT_FOUND" });
 
   const patch = req.body ?? {};
+  if (patch.isActive === true && !canPublishServices(pp)) {
+    return res.status(403).json({ error: "PROVIDER_NOT_VERIFIED" });
+  }
+
   const data = {
     ...(patch.internalCode != null ? { internalCode: patch.internalCode } : {}),
     ...(patch.title != null ? { title: patch.title } : {}),
@@ -188,23 +291,21 @@ providerRouter.patch("/services/:id", requireAuth, requireRole(["PROVIDER"]), as
   };
 
   try {
-    const service = await prisma.service.update({ where: { id }, data });
+    const service = await prisma.service.update({ where: { id: req.params.id }, data });
     res.json({ service });
   } catch {
     return res.status(409).json({ error: "SERVICE_CODE_ALREADY_EXISTS" });
   }
 });
 
-// удалить услугу (мягко) — выключаем
 providerRouter.delete("/services/:id", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
 
-  const id = req.params.id;
-  const existing = await prisma.service.findFirst({ where: { id, providerId: pp.id } });
+  const existing = await prisma.service.findFirst({ where: { id: req.params.id, providerId: pp.id } });
   if (!existing) return res.status(404).json({ error: "NOT_FOUND" });
 
-  await prisma.service.update({ where: { id }, data: { isActive: false } });
+  await prisma.service.update({ where: { id: req.params.id }, data: { isActive: false } });
   res.json({ ok: true });
 });
 
@@ -229,18 +330,16 @@ providerRouter.put("/services/:id/tags", requireAuth, requireRole(["PROVIDER"]),
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
 
-  const id = req.params.id;
   const { tagIds } = req.body ?? {};
   if (!Array.isArray(tagIds)) return res.status(400).json({ error: "tagIds required" });
 
-  const service = await prisma.service.findFirst({ where: { id, providerId: pp.id } });
+  const service = await prisma.service.findFirst({ where: { id: req.params.id, providerId: pp.id } });
   if (!service) return res.status(404).json({ error: "NOT_FOUND" });
 
-  // удаляем старые связи, добавляем новые
-  await prisma.serviceTag.deleteMany({ where: { serviceId: id } });
+  await prisma.serviceTag.deleteMany({ where: { serviceId: req.params.id } });
   if (tagIds.length > 0) {
     await prisma.serviceTag.createMany({
-      data: tagIds.map((tagId) => ({ serviceId: id, tagId }))
+      data: tagIds.map((tagId) => ({ serviceId: req.params.id, tagId }))
     });
   }
 
