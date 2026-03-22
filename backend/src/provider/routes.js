@@ -4,6 +4,10 @@ import { requireAuth, requireRole } from "../auth/middleware.js";
 
 export const providerRouter = Router();
 
+function canPublishServices(providerProfile) {
+  return providerProfile.verificationStatus === "APPROVED";
+}
+
 // получить профиль провайдера по текущему пользователю
 async function getProviderProfile(userId) {
   return prisma.providerProfile.findUnique({ where: { userId } });
@@ -157,7 +161,7 @@ providerRouter.post("/services", requireAuth, requireRole(["PROVIDER"]), async (
         priceFrom: priceFrom == null ? null : Number(priceFrom),
         etaDaysFrom: etaDaysFrom == null ? null : Number(etaDaysFrom),
         imageUrl: imageUrl || null,
-        isActive: isActive == null ? true : Boolean(isActive)
+        isActive: isActive == null ? canPublishServices(pp) : canPublishServices(pp) && Boolean(isActive)
       }
     });
     res.json({ service });
@@ -177,6 +181,10 @@ providerRouter.patch("/services/:id", requireAuth, requireRole(["PROVIDER"]), as
   if (!existing) return res.status(404).json({ error: "NOT_FOUND" });
 
   const patch = req.body ?? {};
+  if (patch.isActive === true && !canPublishServices(pp)) {
+    return res.status(403).json({ error: "PROVIDER_NOT_VERIFIED" });
+  }
+
   const data = {
     ...(patch.internalCode != null ? { internalCode: patch.internalCode } : {}),
     ...(patch.title != null ? { title: patch.title } : {}),

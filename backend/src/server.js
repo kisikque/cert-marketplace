@@ -11,6 +11,7 @@ import { ordersRouter } from "./orders/routes.js";
 import { documentsRouter } from "./documents/routes.js";
 import { providerRouter } from "./provider/routes.js";
 import { adminRouter } from "./admin/routes.js";
+import { providerVerificationRouter } from "./providerVerification/routes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +39,7 @@ app.use("/api/documents", documentsRouter);
 app.use("/api/tags", tagsRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/provider", providerRouter);
+app.use("/api/provider-verification-docs", providerVerificationRouter);
 app.use("/api/admin", adminRouter);
 
 // Статика фронта (позже, после build)
