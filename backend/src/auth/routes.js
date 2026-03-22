@@ -4,14 +4,83 @@ import { prisma } from "../prisma.js";
 
 export const authRouter = Router();
 
-function sanitizeUser(u) {
-  return { id: u.id, email: u.email, role: u.role, displayName: u.displayName };
+async function buildSessionUser(userId) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      providerProfile: {
+        select: {
+          id: true,
+          orgName: true,
+          verificationStatus: true,
+          verificationComment: true
+        }
+      }
+    }
+  });
+
+  if (!user) return null;
+
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    displayName: user.displayName,
+    providerProfileId: user.providerProfile?.id ?? null,
+    providerOrgName: user.providerProfile?.orgName ?? null,
+    providerVerificationStatus: user.providerProfile?.verificationStatus ?? null,
+    providerVerificationComment: user.providerProfile?.verificationComment ?? null
+  };
+}
+
+function slugifyOrgName(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9а-яё]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+async function uniquePublicSlug(orgName) {
+  const base = slugifyOrgName(orgName) || "provider";
+  let candidate = base;
+  let index = 1;
+
+  while (true) {
+    const existing = await prisma.providerProfile.findUnique({
+      where: { publicSlug: candidate },
+      select: { id: true }
+    });
+    if (!existing) return candidate;
+    candidate = `${base}-${index++}`;
+  }
 }
 
 authRouter.post("/register", async (req, res) => {
-  const { email, password, displayName } = req.body ?? {};
+  const {
+    email,
+    password,
+    displayName,
+    accountType = "CUSTOMER",
+    orgName,
+    inn,
+    phone,
+    address,
+    description
+  } = req.body ?? {};
+
   if (!email || !password) return res.status(400).json({ error: "email/password required" });
   if (String(password).length < 6) return res.status(400).json({ error: "password too short" });
+  if (!["CUSTOMER", "PROVIDER"].includes(accountType)) {
+    return res.status(400).json({ error: "invalid accountType" });
+  }
+
+  if (accountType === "PROVIDER") {
+    if (!displayName || !orgName || !inn || !phone || !address) {
+      return res.status(400).json({ error: "provider fields required" });
+    }
+  }
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return res.status(409).json({ error: "email already used" });
@@ -22,12 +91,28 @@ authRouter.post("/register", async (req, res) => {
       email,
       passwordHash,
       displayName: displayName || null,
-      role: "CUSTOMER"
+      role: accountType,
+      ...(accountType === "PROVIDER"
+        ? {
+            providerProfile: {
+              create: {
+                orgName,
+                inn,
+                phone,
+                address,
+                description: description || null,
+                publicSlug: await uniquePublicSlug(orgName),
+                verificationStatus: "PENDING"
+              }
+            }
+          }
+        : {})
     }
   });
 
-  req.session.user = sanitizeUser(user);
-  res.json({ user: sanitizeUser(user) });
+  const sessionUser = await buildSessionUser(user.id);
+  req.session.user = sessionUser;
+  res.json({ user: sessionUser });
 });
 
 authRouter.post("/login", async (req, res) => {
@@ -40,13 +125,18 @@ authRouter.post("/login", async (req, res) => {
   const ok = await bcrypt.compare(String(password), user.passwordHash);
   if (!ok) return res.status(401).json({ error: "invalid credentials" });
 
-  req.session.user = sanitizeUser(user);
-  res.json({ user: sanitizeUser(user) });
+  const sessionUser = await buildSessionUser(user.id);
+  req.session.user = sessionUser;
+  res.json({ user: sessionUser });
 });
 
 authRouter.get("/me", async (req, res) => {
-  const u = req.session?.user || null;
-  res.json({ user: u });
+  const sessUser = req.session?.user || null;
+  if (!sessUser?.id) return res.json({ user: null });
+
+  const fresh = await buildSessionUser(sessUser.id);
+  req.session.user = fresh;
+  res.json({ user: fresh });
 });
 
 authRouter.post("/logout", (req, res) => {

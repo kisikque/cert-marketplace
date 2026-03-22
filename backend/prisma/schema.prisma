@@ -22,18 +22,25 @@ enum OrderStatus {
   DONE
 }
 
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
   passwordHash String
   role         Role     @default(CUSTOMER)
-  displayName  String?  // можно null
+  displayName  String?
   isDeleted    Boolean  @default(false)
 
-  providerProfile ProviderProfile?
-  orders          Order[]            @relation("CustomerOrders")
-  statusChanges   OrderStatusHistory[] @relation("StatusChangedBy")
-  uploadedDocs    OrderDocument[]      @relation("DocUploadedBy")
+  providerProfile         ProviderProfile?
+  orders                  Order[]                        @relation("CustomerOrders")
+  statusChanges           OrderStatusHistory[]           @relation("StatusChangedBy")
+  uploadedDocs            OrderDocument[]                @relation("DocUploadedBy")
+  uploadedProviderDocs    ProviderVerificationDocument[] @relation("ProviderDocUploadedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -44,16 +51,43 @@ model ProviderProfile {
   userId  String @unique
   user    User   @relation(fields: [userId], references: [id])
 
-  orgName   String
-  inn       String?
-  phone     String?
-  address   String?
+  orgName             String
+  inn                 String?
+  phone               String?
+  address             String?
+  description         String?
+  publicSlug          String?             @unique
+  verificationStatus  VerificationStatus  @default(PENDING)
+  verificationComment String?
+  submittedAt         DateTime?
+  verifiedAt          DateTime?
 
-  services Service[]
-  orders   Order[]
+  services             Service[]
+  orders               Order[]
+  verificationDocuments ProviderVerificationDocument[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model ProviderVerificationDocument {
+  id                String          @id @default(cuid())
+  providerProfileId String
+  uploadedByUserId  String
+
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+  uploadedBy      User            @relation("ProviderDocUploadedBy", fields: [uploadedByUserId], references: [id])
+
+  fileName     String
+  mimeType     String
+  size         Int
+  storagePath  String
+  documentType String?
+
+  createdAt DateTime @default(now())
+
+  @@index([providerProfileId])
+  @@index([uploadedByUserId])
 }
 
 model Service {
