@@ -35,7 +35,6 @@ export default function ProviderServices() {
   const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [error, setError] = useState(null);
-  const [uploadingVerificationDoc, setUploadingVerificationDoc] = useState(false);
 
   const [internalCode, setInternalCode] = useState("");
   const [title, setTitle] = useState("");
