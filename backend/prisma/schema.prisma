@@ -22,18 +22,26 @@ enum OrderStatus {
   DONE
 }
 
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
   passwordHash String
   role         Role     @default(CUSTOMER)
-  displayName  String?  // можно null
+  displayName  String?
   isDeleted    Boolean  @default(false)
 
-  providerProfile ProviderProfile?
-  orders          Order[]            @relation("CustomerOrders")
-  statusChanges   OrderStatusHistory[] @relation("StatusChangedBy")
-  uploadedDocs    OrderDocument[]      @relation("DocUploadedBy")
+  providerProfile      ProviderProfile?
+  orders               Order[]                        @relation("CustomerOrders")
+  statusChanges        OrderStatusHistory[]           @relation("StatusChangedBy")
+  uploadedDocs         OrderDocument[]                @relation("DocUploadedBy")
+  uploadedProviderDocs ProviderVerificationDocument[] @relation("ProviderDocUploadedBy")
+  serviceReviews       ServiceReview[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -44,22 +52,54 @@ model ProviderProfile {
   userId  String @unique
   user    User   @relation(fields: [userId], references: [id])
 
-  orgName   String
-  inn       String?
-  phone     String?
-  address   String?
+  orgName             String
+  inn                 String?
+  phone               String?
+  address             String?
+  website             String?
+  description         String?
+  logoUrl             String?
+  publicSlug          String?            @unique
+  verificationStatus  VerificationStatus @default(PENDING)
+  verificationComment String?
+  submittedAt         DateTime?
+  verifiedAt          DateTime?
+  ratingAvg           Float              @default(0)
+  ratingCount         Int                @default(0)
 
-  services Service[]
-  orders   Order[]
+  services              Service[]
+  orders                Order[]
+  verificationDocuments ProviderVerificationDocument[]
+  serviceReviews        ServiceReview[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+model ProviderVerificationDocument {
+  id                String @id @default(cuid())
+  providerProfileId String
+  uploadedByUserId  String
+
+  providerProfile ProviderProfile @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+  uploadedBy      User            @relation("ProviderDocUploadedBy", fields: [uploadedByUserId], references: [id])
+
+  fileName     String
+  mimeType     String
+  size         Int
+  storagePath  String
+  documentType String?
+
+  createdAt DateTime @default(now())
+
+  @@index([providerProfileId])
+  @@index([uploadedByUserId])
+}
+
 model Service {
-  id          String @id @default(cuid())
-  providerId  String
-  provider    ProviderProfile @relation(fields: [providerId], references: [id])
+  id         String @id @default(cuid())
+  providerId String
+  provider   ProviderProfile @relation(fields: [providerId], references: [id])
 
   internalCode String
   title        String
@@ -68,9 +108,12 @@ model Service {
   etaDaysFrom  Int?
   imageUrl     String?
   isActive     Boolean @default(true)
+  ratingAvg    Float   @default(0)
+  ratingCount  Int     @default(0)
 
   orderItems OrderItem[]
   tags       ServiceTag[]
+  reviews    ServiceReview[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -113,6 +156,7 @@ model Order {
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
   documents     OrderDocument[]
+  reviews       ServiceReview[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -123,20 +167,47 @@ model Order {
 }
 
 model OrderItem {
-  id      String @id @default(cuid())
-  orderId String
+  id        String @id @default(cuid())
+  orderId   String
   serviceId String
 
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   service Service @relation(fields: [serviceId], references: [id])
 
-  qty            Int @default(1)
+  qty             Int @default(1)
   priceAtPurchase Int?
+  review          ServiceReview?
 
   createdAt DateTime @default(now())
 
   @@index([orderId])
   @@index([serviceId])
+}
+
+model ServiceReview {
+  id             String @id @default(cuid())
+  serviceId      String
+  providerId     String
+  customerId     String
+  orderId        String
+  orderItemId    String @unique
+  rating         Int
+  text           String?
+  isAnonymous    Boolean @default(true)
+  displayUserId  Boolean @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  service   Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  provider  ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  customer  User            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order     Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+  @@index([providerId])
+  @@index([customerId])
+  @@index([orderId])
 }
 
 model OrderStatusHistory {
@@ -158,12 +229,12 @@ model OrderStatusHistory {
 }
 
 model OrderDocument {
-  id              String @id @default(cuid())
-  orderId         String
+  id               String @id @default(cuid())
+  orderId          String
   uploadedByUserId String
 
-  order       Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  uploadedBy  User  @relation("DocUploadedBy", fields: [uploadedByUserId], references: [id])
+  order      Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  uploadedBy User  @relation("DocUploadedBy", fields: [uploadedByUserId], references: [id])
 
   fileName    String
   mimeType    String
