@@ -1,42 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { apiFetch, apiUpload } from "../api";
 import { useAuthContext } from "../AuthContext";
 
-const PROVIDER_DOCUMENT_TYPES = [
-  { value: "REGISTRATION_DOC", label: "Регистрационный документ" },
-  { value: "TAX_DOC", label: "ИНН / налоговый документ" },
-  { value: "OTHER", label: "Другой документ" }
-];
-
 const API_BASE = "http://localhost:3001";
-const getImageSrc = (value) => (value?.startsWith("http") ? value : `${API_BASE}${value}`);
+const getImageSrc = (value) =>
+  value?.startsWith("http") ? value : `${API_BASE}${value}`;
 
 function getServiceTagIds(service) {
   return (service.tags || []).map((x) => x.tag?.id).filter(Boolean);
 }
 
 export default function ProviderServices() {
-  const { user, refresh } = useAuthContext();
+  const { user } = useAuthContext();
   const nav = useNavigate();
 
   const [services, setServices] = useState([]);
   const [allTags, setAllTags] = useState([]);
-  const [verificationDocuments, setVerificationDocuments] = useState([]);
-  const [verificationMeta, setVerificationMeta] = useState(null);
-  const [profile, setProfile] = useState(null);
 
-  const [verificationDocType, setVerificationDocType] = useState(PROVIDER_DOCUMENT_TYPES[0].value);
-  const [verificationFile, setVerificationFile] = useState(null);
-  const [logoFile, setLogoFile] = useState(null);
   const [serviceImageFile, setServiceImageFile] = useState(null);
-  const [uploadingVerificationDoc, setUploadingVerificationDoc] = useState(false);
-  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
-  const [savingProfile, setSavingProfile] = useState(false);
+
   const [error, setError] = useState(null);
-  const [verificationBlockedModalOpen, setVerificationBlockedModalOpen] = useState(false);
-  const [verificationBlockedMessage, setVerificationBlockedMessage] = useState("");
+
+  const [verificationBlockedModalOpen, setVerificationBlockedModalOpen] =
+    useState(false);
+  const [verificationBlockedMessage, setVerificationBlockedMessage] =
+    useState("");
 
   const [internalCode, setInternalCode] = useState("");
   const [title, setTitle] = useState("");
@@ -45,46 +35,27 @@ export default function ProviderServices() {
   const [etaDaysFrom, setEtaDaysFrom] = useState("");
   const [imageUrl, setImageUrl] = useState("");
 
-  const [profileForm, setProfileForm] = useState({
-    orgName: "",
-    inn: "",
-    description: "",
-    website: "",
-    phone: "",
-    address: ""
-  });
-
   const [tagEditorId, setTagEditorId] = useState(null);
   const [selectedTagIds, setSelectedTagIds] = useState([]);
   const [savingTags, setSavingTags] = useState(false);
 
   useEffect(() => {
-    if (!user || user.role !== "PROVIDER") nav("/");
+    if (!user || user.role !== "PROVIDER") {
+      nav("/");
+    }
   }, [user, nav]);
 
   async function load() {
     setError(null);
+
     try {
-      const [servicesData, tagsData, verificationData, profileData] = await Promise.all([
+      const [servicesData, tagsData] = await Promise.all([
         apiFetch("/provider/services"),
         apiFetch("/provider/tags"),
-        apiFetch("/provider-verification-docs/me"),
-        apiFetch("/provider/profile")
       ]);
 
       setServices(servicesData.services || []);
       setAllTags(tagsData.tags || []);
-      setVerificationDocuments(verificationData.documents || []);
-      setVerificationMeta(verificationData.providerProfile || null);
-      setProfile(profileData.profile || null);
-      setProfileForm({
-        orgName: profileData.profile?.orgName || "",
-        inn: profileData.profile?.inn || "",
-        description: profileData.profile?.description || "",
-        website: profileData.profile?.website || "",
-        phone: profileData.profile?.phone || "",
-        address: profileData.profile?.address || ""
-      });
     } catch (e) {
       setError(e?.error || "Не удалось загрузить данные");
     }
@@ -97,12 +68,15 @@ export default function ProviderServices() {
   async function createService(e) {
     e.preventDefault();
     setError(null);
+
     try {
       let nextImageUrl = imageUrl || null;
+
       if (serviceImageFile) {
         setUploadingServiceImage(true);
         const fd = new FormData();
         fd.append("file", serviceImageFile);
+
         const uploadData = await apiUpload("/provider/services/upload-image", fd);
         nextImageUrl = uploadData.imageUrl;
       }
@@ -115,9 +89,10 @@ export default function ProviderServices() {
           description,
           priceFrom: priceFrom ? Number(priceFrom) : null,
           etaDaysFrom: etaDaysFrom ? Number(etaDaysFrom) : null,
-          imageUrl: nextImageUrl
-        })
+          imageUrl: nextImageUrl,
+        }),
       });
+
       setInternalCode("");
       setTitle("");
       setDescription("");
@@ -125,9 +100,10 @@ export default function ProviderServices() {
       setEtaDaysFrom("");
       setImageUrl("");
       setServiceImageFile(null);
+
       await load();
-    } catch (e2) {
-      setError(e2?.error || "Ошибка создания услуги");
+    } catch (e) {
+      setError(e?.error || "Ошибка создания услуги");
     } finally {
       setUploadingServiceImage(false);
     }
@@ -136,9 +112,12 @@ export default function ProviderServices() {
   async function toggleActive(service) {
     const nextIsActive = !service.isActive;
 
-    if (nextIsActive && verificationMeta?.verificationStatus !== "APPROVED") {
+    if (
+      nextIsActive &&
+      user?.providerVerificationStatus !== "APPROVED"
+    ) {
       setVerificationBlockedMessage(
-       "Невозможно включить услугу, пока аккаунт провайдера не подтверждён. Загрузите документы и дождитесь одобрения."
+        "Невозможно включить услугу, пока аккаунт провайдера не подтверждён. Загрузите документы и дождитесь одобрения."
       );
       setVerificationBlockedModalOpen(true);
       return;
@@ -149,15 +128,23 @@ export default function ProviderServices() {
         method: "PATCH",
         body: JSON.stringify({ isActive: nextIsActive }),
       });
+
       await load();
     } catch (e) {
       setError(e?.error || "Не удалось изменить статус услуги");
     }
-}
+  }
 
   async function softDelete(id) {
-    await apiFetch(`/provider/services/${id}`, { method: "DELETE" });
-    await load();
+    try {
+      await apiFetch(`/provider/services/${id}`, {
+        method: "DELETE",
+      });
+
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось удалить услугу");
+    }
   }
 
   const currentService = useMemo(
@@ -172,21 +159,27 @@ export default function ProviderServices() {
 
   function toggleTag(tagId) {
     setSelectedTagIds((prev) =>
-      prev.includes(tagId) ? prev.filter((x) => x !== tagId) : [...prev, tagId]
+      prev.includes(tagId)
+        ? prev.filter((x) => x !== tagId)
+        : [...prev, tagId]
     );
   }
 
   async function saveTags() {
     if (!tagEditorId) return;
+
     setSavingTags(true);
     setError(null);
+
     try {
       await apiFetch(`/provider/services/${tagEditorId}/tags`, {
         method: "PUT",
-        body: JSON.stringify({ tagIds: selectedTagIds })
+        body: JSON.stringify({ tagIds: selectedTagIds }),
       });
+
       setTagEditorId(null);
       setSelectedTagIds([]);
+
       await load();
     } catch (e) {
       setError(e?.error || "Не удалось сохранить теги");
@@ -195,388 +188,412 @@ export default function ProviderServices() {
     }
   }
 
-  async function uploadVerificationDocument(e) {
-    e.preventDefault();
-    if (!verificationFile) {
-      setError("Выберите файл для верификации");
-      return;
-    }
-
-    setUploadingVerificationDoc(true);
-    setError(null);
-    try {
-      const fd = new FormData();
-      fd.append("file", verificationFile);
-      fd.append("documentType", verificationDocType);
-      await apiUpload("/provider-verification-docs", fd);
-      setVerificationFile(null);
-      await refresh?.();
-      await load();
-    } catch (e2) {
-      setError(e2?.error || "Не удалось загрузить документ верификации");
-    } finally {
-      setUploadingVerificationDoc(false);
-    }
-  }
-
-  async function removeVerificationDocument(id) {
-    try {
-      await apiFetch(`/provider-verification-docs/${id}`, { method: "DELETE" });
-      await load();
-    } catch (e) {
-      setError(e?.error || "Не удалось удалить документ");
-    }
-  }
-
-  async function saveProfile(e) {
-    e.preventDefault();
-    setSavingProfile(true);
-    setError(null);
-    try {
-      await apiFetch("/provider/profile", {
-        method: "PATCH",
-        body: JSON.stringify(profileForm)
-      });
-      await refresh?.();
-      await load();
-    } catch (e) {
-      setError(e?.error || "Не удалось сохранить профиль провайдера");
-    } finally {
-      setSavingProfile(false);
-    }
-  }
-
-  async function uploadLogo(e) {
-    e.preventDefault();
-    if (!logoFile) {
-      setError("Выберите логотип");
-      return;
-    }
-
-    setUploadingLogo(true);
-    setError(null);
-    try {
-      const fd = new FormData();
-      fd.append("file", logoFile);
-      await apiUpload("/provider/profile/logo", fd);
-      setLogoFile(null);
-      await load();
-    } catch (e) {
-      setError(e?.error || "Не удалось загрузить логотип");
-    } finally {
-      setUploadingLogo(false);
-    }
-  }
-
-  async function removeLogo() {
-    try {
-      await apiFetch("/provider/profile/logo", { method: "DELETE" });
-      await load();
-    } catch (e) {
-      setError(e?.error || "Не удалось удалить логотип");
-    }
-  }
-
   if (!user || user.role !== "PROVIDER") return null;
 
   return (
-    <div style={{ maxWidth: 980 }}>
-      <h2>Мои услуги</h2>
-      {error && <p style={{ color: "crimson" }}>{String(error)}</p>}
+    <div style={{ display: "grid", gap: 16 }}>
+      <h2 style={{ margin: 0 }}>Мои услуги</h2>
 
-      {profile && (
-        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14, marginBottom: 16, display: "grid", gap: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <div>
-              <h3 style={{ margin: 0 }}>Публичный профиль провайдера</h3>
-              <div style={{ fontSize: 13, opacity: 0.75 }}>
-                Заполните данные компании, которые увидит покупатель на вашей публичной странице.
-              </div>
-            </div>
-            {profile.publicSlug && verificationMeta?.verificationStatus === "APPROVED" && (
-              <Link to={`/providers/${profile.publicSlug}`} target="_blank" rel="noreferrer">
-                Открыть публичный профиль
-              </Link>
-            )}
-          </div>
-
-          <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-            <div style={{ width: 120, display: "grid", gap: 10 }}>
-              <div
-                style={{
-                  width: 120,
-                  height: 120,
-                  borderRadius: 24,
-                  overflow: "hidden",
-                  border: "1px solid #ddd",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "#fafafa"
-                }}
-              >
-                {profile.logoUrl ? (
-                  <img src={getImageSrc(profile.logoUrl)} alt={profile.orgName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                ) : (
-                  <span style={{ fontSize: 32, opacity: 0.35 }}>{profile.orgName?.slice(0, 1) || "P"}</span>
-                )}
-              </div>
-              <form onSubmit={uploadLogo} style={{ display: "grid", gap: 8, width: "100%" }}>
-                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
-                style={{ width: "100%", maxWidth: "100%", fontSize: 12 }} />
-                <button type="submit" disabled={uploadingLogo} style={{ width: "100%" }}>
-                  {uploadingLogo ? "Загрузка..." : "Загрузить логотип"}
-                </button>
-              </form>
-
-              {profile.logoUrl && ( <button onClick={removeLogo} style={{ width: "100%" }}> Удалить логотип</button>)}
-              <div style={{ fontSize: 12, opacity: 0.7, wordBreak: "break-word"}}>PNG/JPG/WEBP, до 2 MB. Рекомендуемый размер 400×400 px.</div>
-            </div>
-
-            <form onSubmit={saveProfile} style={{ flex: 1, display: "grid", gap: 8, minWidth: 280 }}>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Название компании</span>
-                <input value={profileForm.orgName} onChange={(e) => setProfileForm((prev) => ({ ...prev, orgName: e.target.value }))} />
-              </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>ИНН</span>
-                <input value={profileForm.inn} onChange={(e) => setProfileForm((prev) => ({ ...prev, inn: e.target.value }))} />
-              </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Описание</span>
-                <textarea rows={4} value={profileForm.description} onChange={(e) => setProfileForm((prev) => ({ ...prev, description: e.target.value }))} />
-              </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Сайт</span>
-                <input value={profileForm.website} onChange={(e) => setProfileForm((prev) => ({ ...prev, website: e.target.value }))} placeholder="https://example.com" />
-              </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Телефон</span>
-                <input value={profileForm.phone} onChange={(e) => setProfileForm((prev) => ({ ...prev, phone: e.target.value }))} />
-              </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Адрес</span>
-                <input value={profileForm.address} onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))} />
-              </label>
-              <button type="submit" disabled={savingProfile}>{savingProfile ? "Сохраняем..." : "Сохранить профиль"}</button>
-            </form>
-          </div>
+      {error && (
+        <div
+          style={{
+            border: "1px solid #f1b5b5",
+            background: "#fff5f5",
+            color: "#9b1c1c",
+            padding: 12,
+            borderRadius: 10,
+          }}
+        >
+          {String(error)}
         </div>
       )}
 
-      {verificationMeta && (
-        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14, marginBottom: 16, display: "grid", gap: 10 }}>
-          <div>
-            <strong>Статус верификации:</strong> {verificationMeta.verificationStatus}
-          </div>
-          {user.providerVerificationComment && (
-            <div>
-              <strong>Комментарий администратора:</strong> {user.providerVerificationComment}
-            </div>
-          )}
-          {verificationMeta.verificationStatus !== "APPROVED" && (
-            <div style={{ fontSize: 14 }}>
-              Пока верификация не подтверждена, новые услуги будут создаваться неактивными и публичный профиль будет скрыт от покупателей.
-            </div>
-          )}
+      <form
+        onSubmit={createService}
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 12,
+          padding: 16,
+          display: "grid",
+          gap: 12,
+        }}
+      >
+        <h3 style={{ margin: 0 }}>Создать услугу</h3>
 
-          <form onSubmit={uploadVerificationDocument} style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontWeight: 700 }}>Документы компании</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <select value={verificationDocType} onChange={(e) => setVerificationDocType(e.target.value)}>
-                {PROVIDER_DOCUMENT_TYPES.map((item) => (
-                  <option key={item.value} value={item.value}>{item.label}</option>
-                ))}
-              </select>
-              <input type="file" onChange={(e) => setVerificationFile(e.target.files?.[0] || null)} />
-              <button type="submit" disabled={uploadingVerificationDoc}>
-                {uploadingVerificationDoc ? "Загрузка..." : "Добавить документ"}
-              </button>
-            </div>
-          </form>
-
-          {verificationDocuments.length === 0 ? (
-            <div>Документы для проверки пока не загружены.</div>
-          ) : (
-            <ul style={{ margin: 0, paddingLeft: 18 }}>
-              {verificationDocuments.map((doc) => (
-                <li key={doc.id} style={{ marginBottom: 8 }}>
-                  <a href={`http://localhost:3001/api/provider-verification-docs/${doc.id}/download`} target="_blank" rel="noreferrer">
-                    {doc.fileName}
-                  </a>{" "}
-                  <span style={{ fontSize: 13, opacity: 0.75 }}>
-                    ({doc.documentType || "без типа"}, {Math.round(doc.size / 1024)} KB)
-                  </span>
-                  <button type="button" style={{ marginLeft: 8 }} onClick={() => removeVerificationDocument(doc.id)}>
-                    Удалить
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-      <form onSubmit={createService} style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
-        <h3>Создать услугу</h3>
-        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr" }}>
+        <div
+          style={{
+            display: "grid",
+            gap: 8,
+            gridTemplateColumns: "220px minmax(0, 1fr)",
+            alignItems: "center",
+          }}
+        >
           <label>Код</label>
-          <input value={internalCode} onChange={(e) => setInternalCode(e.target.value)} />
+          <input
+            value={internalCode}
+            onChange={(e) => setInternalCode(e.target.value)}
+          />
 
           <label>Название</label>
           <input value={title} onChange={(e) => setTitle(e.target.value)} />
 
           <label>Описание</label>
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={5}
+          />
 
           <label>Цена от</label>
-          <input value={priceFrom} onChange={(e) => setPriceFrom(e.target.value)} />
+          <input
+            value={priceFrom}
+            onChange={(e) => setPriceFrom(e.target.value)}
+            type="number"
+            min="0"
+          />
 
           <label>Срок от (дней)</label>
-          <input value={etaDaysFrom} onChange={(e) => setEtaDaysFrom(e.target.value)} />
+          <input
+            value={etaDaysFrom}
+            onChange={(e) => setEtaDaysFrom(e.target.value)}
+            type="number"
+            min="0"
+          />
 
           <label>Ссылка на фото</label>
-          <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="/service-images/... или внешний URL" />
+          <input
+            value={imageUrl}
+            onChange={(e) => setImageUrl(e.target.value)}
+            placeholder="/service-images/example.jpg или https://..."
+          />
 
           <label>Загрузить фото</label>
-          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setServiceImageFile(e.target.files?.[0] || null)} />
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(e) => setServiceImageFile(e.target.files?.[0] || null)}
+          />
         </div>
-        <button style={{ marginTop: 10 }} type="submit">
-          {uploadingServiceImage ? "Загружаем фото..." : "Создать"}
-        </button>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <button type="submit" disabled={uploadingServiceImage}>
+            {uploadingServiceImage ? "Загрузка..." : "Создать услугу"}
+          </button>
+
+          <div style={{ fontSize: 12, opacity: 0.7 }}>
+            Если загружен файл, он будет использован вместо ссылки.
+          </div>
+        </div>
       </form>
 
-      {currentService && (
-        <div style={{ marginTop: 16, border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <div>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>{currentService.internalCode}</div>
-              <div style={{ fontWeight: 700 }}>{currentService.title}</div>
-              <div style={{ marginTop: 8 }}>Теги:</div>
-            </div>
-            <button type="button" onClick={() => setTagEditorId(null)}>Закрыть</button>
+      <div style={{ display: "grid", gap: 12 }}>
+        {services.length === 0 ? (
+          <div
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: 12,
+              padding: 16,
+            }}
+          >
+            Услуг пока нет.
           </div>
+        ) : (
+          services.map((service) => (
+            <div
+              key={service.id}
+              style={{
+                border: "1px solid #ddd",
+                borderRadius: 12,
+                padding: 16,
+                display: "grid",
+                gap: 12,
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: service.imageUrl
+                    ? "160px minmax(0, 1fr)"
+                    : "1fr",
+                  gap: 16,
+                  alignItems: "start",
+                }}
+              >
+                {service.imageUrl && (
+                  <img
+                    src={getImageSrc(service.imageUrl)}
+                    alt={service.title}
+                    style={{
+                      width: 160,
+                      height: 120,
+                      objectFit: "cover",
+                      borderRadius: 12,
+                      border: "1px solid #ddd",
+                      display: "block",
+                    }}
+                  />
+                )}
 
-          {allTags.length === 0 ? (
-            <p>Тегов пока нет.</p>
-          ) : (
-            <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {allTags.map((t) => (
-                <label
-                  key={t.id}
-                  style={{
-                    border: "1px solid #ddd",
-                    borderRadius: 999,
-                    padding: "4px 10px",
-                    display: "flex",
-                    gap: 6,
-                    alignItems: "center"
-                  }}
-                >
-                  <input type="checkbox" checked={selectedTagIds.includes(t.id)} onChange={() => toggleTag(t.id)} />
-                  {t.name}
-                </label>
-              ))}
-            </div>
-          )}
-
-          <div style={{ marginTop: 12 }}>
-            <button type="button" disabled={savingTags} onClick={saveTags}>
-              {savingTags ? "Сохраняем..." : "Сохранить теги"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <h3 style={{ marginTop: 16 }}>Список</h3>
-      {services.length === 0 ? (
-        <p>Услуг пока нет.</p>
-      ) : (
-        <div style={{ display: "grid", gap: 10 }}>
-          {services.map((service) => (
-            <div key={service.id} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
-              {service.imageUrl && (
-                <div style={{ marginBottom: 10, borderRadius: 12, overflow: "hidden", border: "1px solid #ddd", width: 220, maxWidth: "100%", aspectRatio: "16 / 9" }}>
-                  <img src={getImageSrc(service.imageUrl)} alt={service.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                </div>
-              )}
-              <div style={{ fontSize: 12, opacity: 0.7 }}>{service.internalCode}</div>
-              <div style={{ fontWeight: 700 }}>
-                {service.title} {service.isActive ? "" : "(выключена)"}
-              </div>
-              <div style={{ marginTop: 4, fontSize: 13 }}>
-                {service.ratingCount ? `★ ${service.ratingAvg.toFixed(1)} (${service.ratingCount})` : "Пока без оценок"}
-              </div>
-              <div style={{ marginTop: 6, fontSize: 13 }}>{service.description}</div>
-
-              <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {(service.tags || []).map((x) => (
-                  <span
-                    key={x.tag.id}
-                    style={{ fontSize: 12, padding: "2px 8px", borderRadius: 999, border: "1px solid #ddd" }}
-                  >
-                    {x.tag.name}
-                  </span>
-                ))}
-              </div>
-
-              <div style={{ marginTop: 8 }}>
-                <button type="button" onClick={() => openTagEditor(service)}>Теги</button>
-                <button type="button" onClick={() => toggleActive(service)} style={{ marginLeft: 8 }}>
-                  {service.isActive ? "Выключить" : "Включить"}
-                </button>
-                {verificationBlockedModalOpen && (
+                <div style={{ minWidth: 0 }}>
                   <div
                     style={{
-                      position: "fixed",
-                      inset: 0,
-                      background: "rgba(0, 0, 0, 0.45)",
                       display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
                       alignItems: "center",
-                      justifyContent: "center",
-                      padding: 16,
-                      zIndex: 1000,
                     }}
-                    onClick={() => setVerificationBlockedModalOpen(false)}
                   >
+                    <strong style={{ fontSize: 18 }}>{service.title}</strong>
+
+                    <span
+                      style={{
+                        fontSize: 12,
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        background: service.isActive ? "#e8f7ee" : "#f3f4f6",
+                        border: "1px solid #ddd",
+                      }}
+                    >
+                      {service.isActive ? "Активна" : "Неактивна"}
+                    </span>
+                  </div>
+
+                  {service.internalCode && (
+                    <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4 }}>
+                      Код: {service.internalCode}
+                    </div>
+                  )}
+
+                  {service.description && (
+                    <div style={{ marginTop: 8, lineHeight: 1.5 }}>
+                      {service.description}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 16,
+                      flexWrap: "wrap",
+                      marginTop: 10,
+                      fontSize: 14,
+                    }}
+                  >
+                    {service.priceFrom != null && (
+                      <span>Цена от: {service.priceFrom}</span>
+                    )}
+
+                    {service.etaDaysFrom != null && (
+                      <span>Срок от: {service.etaDaysFrom} дн.</span>
+                    )}
+                  </div>
+
+                  {service.tags?.length > 0 && (
                     <div
                       style={{
-                        width: "100%",
-                        maxWidth: 440,
-                        background: "#fff",
-                        borderRadius: 16,
-                        padding: 20,
-                        boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
-                        display: "grid",
-                        gap: 14,
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginTop: 12,
                       }}
-                      onClick={(e) => e.stopPropagation()}
                     >
-                      <div style={{ fontSize: 22, fontWeight: 700 }}>
-                        Нельзя включить услугу
-                      </div>
-
-                      <div style={{ lineHeight: 1.5 }}>
-                        {verificationBlockedMessage}
-                      </div>
-
-                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-                        <button
-                          type="button"
-                          onClick={() => setVerificationBlockedModalOpen(false)}
+                      {service.tags.map((item) => (
+                        <span
+                          key={item.id}
+                          style={{
+                            border: "1px solid #ddd",
+                            borderRadius: 999,
+                            padding: "4px 10px",
+                            fontSize: 12,
+                            background: "#fafafa",
+                          }}
                         >
-                          Понятно
-                        </button>
-                      </div>
+                          {item.tag?.name}
+                        </span>
+                      ))}
                     </div>
-                  </div>
-                )}
-                <button type="button" onClick={() => softDelete(service.id)} style={{ marginLeft: 8 }}>
+                  )}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  alignItems: "start",
+                }}
+              >
+                <button type="button" onClick={() => openTagEditor(service)}>
+                  Теги
+                </button>
+
+                <div style={{ display: "grid", gap: 6 }}>
+                  <button type="button" onClick={() => toggleActive(service)}>
+                    {service.isActive ? "Выключить" : "Включить"}
+                  </button>
+
+                  {!service.isActive &&
+                    user?.providerVerificationStatus !== "APPROVED" && (
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>
+                        Для включения услуги нужно подтверждение аккаунта.
+                      </div>
+                    )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => softDelete(service.id)}
+                >
                   Удалить
                 </button>
               </div>
             </div>
-          ))}
+          ))
+        )}
+      </div>
+
+      {tagEditorId && currentService && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            zIndex: 1000,
+          }}
+          onClick={() => {
+            setTagEditorId(null);
+            setSelectedTagIds([]);
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 560,
+              background: "#fff",
+              borderRadius: 16,
+              padding: 20,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+              display: "grid",
+              gap: 16,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 700 }}>
+                Теги услуги
+              </div>
+              <div style={{ marginTop: 6, opacity: 0.75 }}>
+                {currentService.title}
+              </div>
+            </div>
+
+            {allTags.length === 0 ? (
+              <div>Список тегов пуст.</div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                {allTags.map((tag) => {
+                  const checked = selectedTagIds.includes(tag.id);
+
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleTag(tag.id)}
+                      style={{
+                        border: "1px solid #ddd",
+                        borderRadius: 999,
+                        padding: "8px 12px",
+                        background: checked ? "#eef6ff" : "#fff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {tag.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setTagEditorId(null);
+                  setSelectedTagIds([]);
+                }}
+              >
+                Отмена
+              </button>
+
+              <button type="button" onClick={saveTags} disabled={savingTags}>
+                {savingTags ? "Сохраняем..." : "Сохранить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {verificationBlockedModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            zIndex: 1000,
+          }}
+          onClick={() => setVerificationBlockedModalOpen(false)}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 440,
+              background: "#fff",
+              borderRadius: 16,
+              padding: 20,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+              display: "grid",
+              gap: 14,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 22, fontWeight: 700 }}>
+              Нельзя включить услугу
+            </div>
+
+            <div style={{ lineHeight: 1.5 }}>
+              {verificationBlockedMessage}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setVerificationBlockedModalOpen(false)}
+              >
+                Понятно
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
