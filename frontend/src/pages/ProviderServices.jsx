@@ -60,11 +60,14 @@ export default function ProviderServices() {
   const [savingTags, setSavingTags] = useState(false);
 
   useEffect(() => {
-    if (!user || user.role !== "PROVIDER") nav("/");
+    if (!user || user.role !== "PROVIDER") {
+      nav("/");
+    }
   }, [user, nav]);
 
   async function load() {
     setError(null);
+
     try {
       const [servicesData, tagsData, verificationData, profileData] = await Promise.all([
         apiFetch("/provider/services"),
@@ -98,6 +101,7 @@ export default function ProviderServices() {
   async function createService(e) {
     e.preventDefault();
     setError(null);
+
     try {
       let nextImageUrl = imageUrl || null;
       if (serviceImageFile) {
@@ -151,8 +155,15 @@ export default function ProviderServices() {
   }
 
   async function softDelete(id) {
-    await apiFetch(`/provider/services/${id}`, { method: "DELETE" });
-    await load();
+    try {
+      await apiFetch(`/provider/services/${id}`, {
+        method: "DELETE",
+      });
+
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось удалить услугу");
+    }
   }
 
   const currentService = useMemo(
@@ -167,21 +178,35 @@ export default function ProviderServices() {
 
   function toggleTag(tagId) {
     setSelectedTagIds((prev) =>
-      prev.includes(tagId) ? prev.filter((x) => x !== tagId) : [...prev, tagId]
+      prev.includes(tagId)
+        ? prev.filter((x) => x !== tagId)
+        : [...prev, tagId]
     );
   }
 
+  function toggleNewServiceTag(tagId) {
+  setNewServiceTagIds((prev) =>
+    prev.includes(tagId)
+      ? prev.filter((x) => x !== tagId)
+      : [...prev, tagId]
+  );
+}
+
   async function saveTags() {
     if (!tagEditorId) return;
+
     setSavingTags(true);
     setError(null);
+
     try {
       await apiFetch(`/provider/services/${tagEditorId}/tags`, {
         method: "PUT",
-        body: JSON.stringify({ tagIds: selectedTagIds })
+        body: JSON.stringify({ tagIds: selectedTagIds }),
       });
+
       setTagEditorId(null);
       setSelectedTagIds([]);
+
       await load();
     } catch (e) {
       setError(e?.error || "Не удалось сохранить теги");
@@ -412,13 +437,20 @@ export default function ProviderServices() {
         <h3>Создать услугу</h3>
         <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr" }}>
           <label>Код</label>
-          <input value={internalCode} onChange={(e) => setInternalCode(e.target.value)} />
+          <input
+            value={internalCode}
+            onChange={(e) => setInternalCode(e.target.value)}
+          />
 
           <label>Название</label>
           <input value={title} onChange={(e) => setTitle(e.target.value)} />
 
           <label>Описание</label>
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={5}
+          />
 
           <label>Категория</label>
           <select value={category} onChange={(e) => setCategory(e.target.value)}>
@@ -435,7 +467,12 @@ export default function ProviderServices() {
           </select>
 
           <label>Цена от</label>
-          <input value={priceFrom} onChange={(e) => setPriceFrom(e.target.value)} />
+          <input
+            value={priceFrom}
+            onChange={(e) => setPriceFrom(e.target.value)}
+            type="number"
+            min="0"
+          />
 
           <label>Срок от (дней)</label>
           <input value={etaDaysFrom} onChange={(e) => setEtaDaysFrom(e.target.value)} />
@@ -461,6 +498,7 @@ export default function ProviderServices() {
             </div>
             <button type="button" onClick={() => setTagEditorId(null)}>Закрыть</button>
           </div>
+        </div>
 
           {allTags.length === 0 ? (
             <p>Тегов пока нет.</p>
@@ -491,7 +529,7 @@ export default function ProviderServices() {
             </button>
           </div>
         </div>
-      )}
+      </form>
 
       <h3 style={{ marginTop: 16 }}>Список</h3>
       {services.length === 0 ? (
@@ -526,9 +564,77 @@ export default function ProviderServices() {
                     key={x.tag.id}
                     style={{ fontSize: 12, padding: "2px 8px", borderRadius: 999, border: "1px solid #ddd" }}
                   >
-                    {x.tag.name}
-                  </span>
-                ))}
+                    <strong style={{ fontSize: 18 }}>{service.title}</strong>
+
+                    <span
+                      style={{
+                        fontSize: 12,
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        background: service.isActive ? "#e8f7ee" : "#f3f4f6",
+                        border: "1px solid #ddd",
+                      }}
+                    >
+                      {service.isActive ? "Активна" : "Неактивна"}
+                    </span>
+                  </div>
+
+                  {service.internalCode && (
+                    <div style={{ fontSize: 13, opacity: 0.75, marginTop: 4 }}>
+                      Код: {service.internalCode}
+                    </div>
+                  )}
+
+                  {service.description && (
+                    <div style={{ marginTop: 8, lineHeight: 1.5 }}>
+                      {service.description}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 16,
+                      flexWrap: "wrap",
+                      marginTop: 10,
+                      fontSize: 14,
+                    }}
+                  >
+                    {service.priceFrom != null && (
+                      <span>Цена: {service.priceFrom}</span>
+                    )}
+
+                    {service.etaDaysFrom != null && (
+                      <span>Срок от: {service.etaDaysFrom} дн.</span>
+                    )}
+                  </div>
+
+                  {service.tags?.length > 0 && (
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginTop: 12,
+                      }}
+                    >
+                      {service.tags.map((item) => (
+                        <span
+                          key={item.id}
+                          style={{
+                            border: "1px solid #ddd",
+                            borderRadius: 999,
+                            padding: "4px 10px",
+                            fontSize: 12,
+                            background: "#fafafa",
+                          }}
+                        >
+                          {item.tag?.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div style={{ marginTop: 8 }}>
@@ -541,7 +647,151 @@ export default function ProviderServices() {
                 </button>
               </div>
             </div>
-          ))}
+          ))
+        )}
+      </div>
+
+      {tagEditorId && currentService && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            zIndex: 1000,
+          }}
+          onClick={() => {
+            setTagEditorId(null);
+            setSelectedTagIds([]);
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 560,
+              background: "#fff",
+              borderRadius: 16,
+              padding: 20,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+              display: "grid",
+              gap: 16,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 700 }}>
+                Теги услуги
+              </div>
+              <div style={{ marginTop: 6, opacity: 0.75 }}>
+                {currentService.title}
+              </div>
+            </div>
+
+            {allTags.length === 0 ? (
+              <div>Список тегов пуст.</div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                {allTags.map((tag) => {
+                  const checked = selectedTagIds.includes(tag.id);
+
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleTag(tag.id)}
+                      style={{
+                        border: "1px solid #ddd",
+                        borderRadius: 999,
+                        padding: "8px 12px",
+                        background: checked ? "#eef6ff" : "#fff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {tag.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setTagEditorId(null);
+                  setSelectedTagIds([]);
+                }}
+              >
+                Отмена
+              </button>
+
+              <button type="button" onClick={saveTags} disabled={savingTags}>
+                {savingTags ? "Сохраняем..." : "Сохранить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {verificationBlockedModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            zIndex: 1000,
+          }}
+          onClick={() => setVerificationBlockedModalOpen(false)}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 440,
+              background: "#fff",
+              borderRadius: 16,
+              padding: 20,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+              display: "grid",
+              gap: 14,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 22, fontWeight: 700 }}>
+              Нельзя включить услугу
+            </div>
+
+            <div style={{ lineHeight: 1.5 }}>
+              {verificationBlockedMessage}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setVerificationBlockedModalOpen(false)}
+              >
+                Понятно
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
