@@ -6,17 +6,13 @@ export const adminRouter = Router();
 
 adminRouter.use(requireAuth, requireRole(["ADMIN"]));
 
-// USERS: list
 adminRouter.get("/users", async (req, res) => {
   const q = String(req.query.q || "").trim().toLowerCase();
 
   const users = await prisma.user.findMany({
     where: q
       ? {
-          OR: [
-            { email: { contains: q } },
-            { displayName: { contains: q } }
-          ]
+          OR: [{ email: { contains: q } }, { displayName: { contains: q } }]
         }
       : undefined,
     orderBy: { createdAt: "desc" },
@@ -33,7 +29,6 @@ adminRouter.get("/users", async (req, res) => {
   res.json({ users });
 });
 
-// USERS: update (роль/имя) — минимум
 adminRouter.patch("/users/:id", async (req, res) => {
   const id = req.params.id;
   const { role, displayName } = req.body ?? {};
@@ -52,14 +47,12 @@ adminRouter.patch("/users/:id", async (req, res) => {
   res.json({ user });
 });
 
-// USERS: soft-delete
 adminRouter.post("/users/:id/delete", async (req, res) => {
   const id = req.params.id;
   await prisma.user.update({ where: { id }, data: { isDeleted: true } });
   res.json({ ok: true });
 });
 
-// ORDERS: list (+ фильтры)
 adminRouter.get("/orders", async (req, res) => {
   const status = req.query.status ? String(req.query.status) : null;
 
@@ -87,10 +80,111 @@ adminRouter.get("/orders", async (req, res) => {
   });
 });
 
-// CSV helpers
+adminRouter.get("/provider-verifications", async (req, res) => {
+  const status = String(req.query.status || "").trim();
+
+  const providerProfiles = await prisma.providerProfile.findMany({
+    where: status ? { verificationStatus: status } : undefined,
+    include: {
+      user: { select: { id: true, email: true, displayName: true } },
+      verificationDocuments: { orderBy: { createdAt: "desc" } }
+    },
+    orderBy: [{ verificationStatus: "asc" }, { submittedAt: "desc" }, { createdAt: "desc" }]
+  });
+
+  res.json({
+    providers: providerProfiles.map((profile) => ({
+      id: profile.id,
+      orgName: profile.orgName,
+      inn: profile.inn,
+      phone: profile.phone,
+      address: profile.address,
+      description: profile.description,
+      verificationStatus: profile.verificationStatus,
+      verificationComment: profile.verificationComment,
+      submittedAt: profile.submittedAt,
+      verifiedAt: profile.verifiedAt,
+      createdAt: profile.createdAt,
+      publicSlug: profile.publicSlug,
+      user: profile.user,
+      documents: profile.verificationDocuments.map((doc) => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        mimeType: doc.mimeType,
+        size: doc.size,
+        documentType: doc.documentType,
+        createdAt: doc.createdAt
+      }))
+    }))
+  });
+});
+
+adminRouter.get("/provider-verifications/:providerId", async (req, res) => {
+  const profile = await prisma.providerProfile.findUnique({
+    where: { id: req.params.providerId },
+    include: {
+      user: { select: { id: true, email: true, displayName: true } },
+      verificationDocuments: { orderBy: { createdAt: "desc" } }
+    }
+  });
+  if (!profile) return res.status(404).json({ error: "NOT_FOUND" });
+
+  res.json({
+    provider: {
+      id: profile.id,
+      orgName: profile.orgName,
+      inn: profile.inn,
+      phone: profile.phone,
+      address: profile.address,
+      description: profile.description,
+      verificationStatus: profile.verificationStatus,
+      verificationComment: profile.verificationComment,
+      submittedAt: profile.submittedAt,
+      verifiedAt: profile.verifiedAt,
+      user: profile.user,
+      documents: profile.verificationDocuments.map((doc) => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        mimeType: doc.mimeType,
+        size: doc.size,
+        documentType: doc.documentType,
+        createdAt: doc.createdAt
+      }))
+    }
+  });
+});
+
+async function updateVerificationStatus(providerId, verificationStatus, verificationComment) {
+  return prisma.providerProfile.update({
+    where: { id: providerId },
+    data: {
+      verificationStatus,
+      verificationComment: verificationComment || null,
+      verifiedAt: verificationStatus === "APPROVED" ? new Date() : null,
+      submittedAt: verificationStatus === "PENDING" ? new Date() : undefined
+    }
+  });
+}
+
+adminRouter.post("/provider-verifications/:providerId/approve", async (req, res) => {
+  const profile = await prisma.providerProfile.findUnique({ where: { id: req.params.providerId } });
+  if (!profile) return res.status(404).json({ error: "NOT_FOUND" });
+
+  await updateVerificationStatus(req.params.providerId, "APPROVED", req.body?.comment);
+  res.json({ ok: true });
+});
+
+adminRouter.post("/provider-verifications/:providerId/reject", async (req, res) => {
+  const profile = await prisma.providerProfile.findUnique({ where: { id: req.params.providerId } });
+  if (!profile) return res.status(404).json({ error: "NOT_FOUND" });
+
+  await updateVerificationStatus(req.params.providerId, "REJECTED", req.body?.comment);
+  res.json({ ok: true });
+});
+
 function csvEscape(v) {
   const s = String(v ?? "");
-  if (/[,"\n]/.test(s)) return `"${s.replaceAll('"', '""')}"`;
+  if (/[,"]|\n/.test(s)) return `"${s.replaceAll('"', '""')}"`;
   return s;
 }
 function toCSV(rows, headers) {
@@ -99,7 +193,6 @@ function toCSV(rows, headers) {
   return [head, ...lines].join("\n");
 }
 
-// EXPORT: users.csv
 adminRouter.get("/export/users.csv", async (req, res) => {
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
@@ -120,10 +213,9 @@ adminRouter.get("/export/users.csv", async (req, res) => {
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", "attachment; filename=users.csv");
-  res.send("\uFEFF" + csv); // BOM чтобы Excel нормально открыл UTF-8
+  res.send("\uFEFF" + csv);
 });
 
-// EXPORT: orders.csv
 adminRouter.get("/export/orders.csv", async (req, res) => {
   const orders = await prisma.order.findMany({
     orderBy: { createdAt: "desc" },

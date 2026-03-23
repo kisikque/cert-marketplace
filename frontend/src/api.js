@@ -17,11 +17,13 @@ export async function apiFetch(path, options = {}) {
   return res.json();
 }
 
-export async function apiUpload(path, formData) {
-  const res = await fetch(`http://localhost:3001/api${path}`, {
-    method: "POST",
+export async function apiUpload(path, formData, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: options.method || "POST",
     credentials: "include",
-    body: formData
+    body: formData,
+    headers: options.headers,
+    ...options
   });
 
   if (!res.ok) {
