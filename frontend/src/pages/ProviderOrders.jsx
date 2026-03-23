@@ -37,6 +37,12 @@ export default function ProviderOrders() {
               </div>
               <div style={{ fontWeight: 700 }}>Заявка #{o.id}</div>
               <div>Статус: <b>{o.status}</b></div>
+              {o.clientProduct && <div style={{ marginTop: 6 }}>Продукт: <b>{o.clientProduct.title}</b> ({o.clientProduct.kind === "PRODUCT" ? "товар" : "услуга"})</div>}
+              {o.providerNeedsAttention && (
+                <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: "#fff0cf", color: "#6d4a00" }}>
+                  Пользователь обновил данные — проверьте логи.
+                </div>
+              )}
               <div style={{ marginTop: 6 }}>
                 Клиент: {o.customer.displayName || o.customer.email}
               </div>

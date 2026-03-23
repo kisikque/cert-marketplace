@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 import { useAuthContext } from "../AuthContext";
 import { clearCart, getCart, removeItem, setQty } from "../cart";
-import { useNavigate } from "react-router-dom";
 
 export default function CartPage() {
   const { user } = useAuthContext();
@@ -10,17 +10,23 @@ export default function CartPage() {
 
   const [cart, setCart] = useState(getCart());
   const [services, setServices] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [selectedProductId, setSelectedProductId] = useState("");
   const [error, setError] = useState(null);
 
-  // гостям сюда нельзя
   useEffect(() => {
     if (!user) nav("/login");
   }, [user, nav]);
 
   useEffect(() => {
-    apiFetch("/services")
-      .then((d) => setServices(d.services || []))
-      .catch(() => setError("Не удалось загрузить каталог"));
+    Promise.all([apiFetch("/services"), apiFetch("/customer/profile")])
+      .then(([servicesData, profileData]) => {
+        setServices(servicesData.services || []);
+        setProducts(profileData.profile?.products || []);
+        const firstProductId = profileData.profile?.products?.[0]?.id || "";
+        setSelectedProductId((prev) => prev || firstProductId);
+      })
+      .catch(() => setError("Не удалось загрузить каталог или продукты"));
   }, []);
 
   const rows = useMemo(() => {
@@ -51,25 +57,30 @@ export default function CartPage() {
   }
 
   async function checkout() {
-  setError(null);
-  try {
-    const payload = {
-      items: cart.items,
-      customerComment: null
-    };
-    const res = await apiFetch("/orders", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
+    setError(null);
+    if (!selectedProductId) {
+      setError("Перед оформлением заявки выберите продукт из раздела «Мои продукты»");
+      return;
+    }
 
-    clearCart();
-    setCart(getCart());
-    nav(`/orders/${res.orderId}`);
-  } catch (e) {
-    setError(e?.error || "Не удалось оформить заявку");
+    try {
+      const payload = {
+        items: cart.items,
+        customerComment: null,
+        clientProductId: selectedProductId
+      };
+      const res = await apiFetch("/orders", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+
+      clearCart();
+      setCart(getCart());
+      nav(`/orders/${res.orderId}`);
+    } catch (e) {
+      setError(e?.error || "Не удалось оформить заявку");
+    }
   }
-}
-
 
   if (!user) return null;
 
@@ -82,6 +93,20 @@ export default function CartPage() {
         <p>Корзина пуста.</p>
       ) : (
         <>
+          <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14, marginBottom: 16, display: "grid", gap: 10 }}>
+            <div style={{ fontWeight: 700 }}>Продукт для сертификации</div>
+            <select value={selectedProductId} onChange={(e) => setSelectedProductId(e.target.value)}>
+              <option value="">— выберите товар/услугу —</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.kind === "PRODUCT" ? "Товар" : "Услуга"}: {product.title}
+                </option>
+              ))}
+            </select>
+            <div style={{ fontSize: 13, opacity: 0.72 }}>
+              Нет подходящего продукта? <Link to="/products">Создайте его в разделе «Мои продукты»</Link>.
+            </div>
+          </div>
           <div style={{ display: "grid", gap: 10 }}>
             {rows.map((r) => (
               <div
@@ -98,9 +123,7 @@ export default function CartPage() {
                 <div>
                   <div style={{ fontSize: 12, opacity: 0.7 }}>{r.service.providerName}</div>
                   <div style={{ fontWeight: 700 }}>{r.service.title}</div>
-                  <div style={{ fontSize: 13, marginTop: 6 }}>
-                    Цена: {r.service.priceFrom ?? "—"} ₽
-                  </div>
+                  <div style={{ fontSize: 13, marginTop: 6 }}>Цена: {r.service.priceFrom ?? "—"} ₽</div>
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
