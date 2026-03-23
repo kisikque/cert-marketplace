@@ -1,6 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../prisma.js";
+import { normalizeCustomerProfilePayload } from "../lib/customerData.js";
 
 export const authRouter = Router();
 
@@ -14,6 +15,15 @@ async function buildSessionUser(userId) {
           orgName: true,
           verificationStatus: true,
           verificationComment: true
+        }
+      },
+      customerProfile: {
+        select: {
+          id: true,
+          accountKind: true,
+          companyName: true,
+          fullName: true,
+          contactName: true
         }
       }
     }
@@ -29,7 +39,11 @@ async function buildSessionUser(userId) {
     providerProfileId: user.providerProfile?.id ?? null,
     providerOrgName: user.providerProfile?.orgName ?? null,
     providerVerificationStatus: user.providerProfile?.verificationStatus ?? null,
-    providerVerificationComment: user.providerProfile?.verificationComment ?? null
+    providerVerificationComment: user.providerProfile?.verificationComment ?? null,
+    customerProfileId: user.customerProfile?.id ?? null,
+    customerAccountKind: user.customerProfile?.accountKind ?? null,
+    customerProfileName:
+      user.customerProfile?.companyName || user.customerProfile?.fullName || user.customerProfile?.contactName || null
   };
 }
 
@@ -67,7 +81,9 @@ authRouter.post("/register", async (req, res) => {
     inn,
     phone,
     address,
-    description
+    description,
+    customerAccountKind = "INDIVIDUAL",
+    customerProfile
   } = req.body ?? {};
 
   if (!email || !password) return res.status(400).json({ error: "email/password required" });
@@ -84,6 +100,27 @@ authRouter.post("/register", async (req, res) => {
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return res.status(409).json({ error: "email already used" });
+
+  let normalizedCustomerProfile = null;
+  if (accountType === "CUSTOMER") {
+    try {
+      normalizedCustomerProfile = normalizeCustomerProfilePayload(customerProfile ?? {}, customerAccountKind);
+      if (
+        normalizedCustomerProfile.accountKind === "BUSINESS" &&
+        !normalizedCustomerProfile.companyName
+      ) {
+        return res.status(400).json({ error: "COMPANY_NAME_REQUIRED" });
+      }
+      if (
+        normalizedCustomerProfile.accountKind === "INDIVIDUAL" &&
+        !normalizedCustomerProfile.fullName
+      ) {
+        return res.status(400).json({ error: "FULL_NAME_REQUIRED" });
+      }
+    } catch (error) {
+      return res.status(400).json({ error: error.message || "INVALID_CUSTOMER_PROFILE" });
+    }
+  }
 
   const passwordHash = await bcrypt.hash(String(password), 10);
   const user = await prisma.user.create({
@@ -106,7 +143,11 @@ authRouter.post("/register", async (req, res) => {
               }
             }
           }
-        : {})
+        : {
+            customerProfile: {
+              create: normalizedCustomerProfile
+            }
+          })
     }
   });
 

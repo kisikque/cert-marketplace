@@ -39,6 +39,24 @@ enum CertificationKind {
   VOLUNTARY
 }
 
+enum CustomerAccountKind {
+  INDIVIDUAL
+  BUSINESS
+}
+
+enum ClientProductKind {
+  PRODUCT
+  SERVICE
+}
+
+enum OrderEventType {
+  PROFILE_UPDATED
+  PRODUCT_UPDATED
+  PRODUCT_DOCUMENT_UPLOADED
+  PRODUCT_DOCUMENT_REMOVED
+  CERTIFICATE_ISSUED
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -48,11 +66,38 @@ model User {
   isDeleted    Boolean  @default(false)
 
   providerProfile      ProviderProfile?
+  customerProfile      CustomerProfile?
   orders               Order[]                        @relation("CustomerOrders")
   statusChanges        OrderStatusHistory[]           @relation("StatusChangedBy")
   uploadedDocs         OrderDocument[]                @relation("DocUploadedBy")
   uploadedProviderDocs ProviderVerificationDocument[] @relation("ProviderDocUploadedBy")
+  uploadedProductDocs  ClientProductDocument[]        @relation("ProductDocUploadedBy")
   serviceReviews       ServiceReview[]
+  orderEvents          OrderEventLog[]                @relation("OrderEventChangedBy")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CustomerProfile {
+  id                 String              @id @default(cuid())
+  userId             String              @unique
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountKind        CustomerAccountKind @default(INDIVIDUAL)
+  legalEntityType    String?
+  fullName           String?
+  companyName        String?
+  contactName        String?
+  phone              String?
+  address            String?
+  inn                String?
+  kpp                String?
+  ogrn               String?
+  position           String?
+  esiaIntegrationNote String?
+
+  products  ClientProduct[]
+  orders    Order[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -154,22 +199,91 @@ model ServiceTag {
   @@index([tagId])
 }
 
+model ClientProduct {
+  id                String            @id @default(cuid())
+  customerProfileId String
+  customerProfile   CustomerProfile   @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
+  kind              ClientProductKind
+  title             String
+  description       String?
+  specs             String?
+  categoryLabel     String?
+  documentsLabel    String?           @default("Документы Товара/Услуги")
+
+  documents    ClientProductDocument[]
+  orders       Order[]
+  certificates ProductCertificate[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerProfileId])
+}
+
+model ClientProductDocument {
+  id              String @id @default(cuid())
+  clientProductId String
+  uploadedByUserId String
+
+  clientProduct ClientProduct @relation(fields: [clientProductId], references: [id], onDelete: Cascade)
+  uploadedBy    User          @relation("ProductDocUploadedBy", fields: [uploadedByUserId], references: [id])
+
+  fileName    String
+  mimeType    String
+  size        Int
+  storagePath String
+
+  createdAt DateTime @default(now())
+
+  @@index([clientProductId])
+  @@index([uploadedByUserId])
+}
+
+model ProductCertificate {
+  id              String @id @default(cuid())
+  clientProductId String
+  orderId         String
+
+  clientProduct ClientProduct @relation(fields: [clientProductId], references: [id], onDelete: Cascade)
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  title      String
+  certNumber String
+  status     String  @default("ISSUED")
+  issuedAt   DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientProductId])
+  @@index([orderId])
+}
+
 model Order {
-  id         String @id @default(cuid())
-  customerId String
-  providerId String
+  id                String @id @default(cuid())
+  customerId        String
+  providerId        String
+  customerProfileId String?
+  clientProductId   String?
 
-  customer User            @relation("CustomerOrders", fields: [customerId], references: [id])
-  provider ProviderProfile @relation(fields: [providerId], references: [id])
+  customer        User             @relation("CustomerOrders", fields: [customerId], references: [id])
+  provider        ProviderProfile  @relation(fields: [providerId], references: [id])
+  customerProfile CustomerProfile? @relation(fields: [customerProfileId], references: [id])
+  clientProduct   ClientProduct?   @relation(fields: [clientProductId], references: [id])
 
-  status          OrderStatus @default(NEW)
-  customerComment String?
-  providerComment String?
+  status                     OrderStatus @default(NEW)
+  customerComment            String?
+  providerComment            String?
+  providerNeedsAttention     Boolean     @default(false)
+  lastCustomerDataChangeAt   DateTime?
+  lastCustomerDataChangeType String?
 
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
   documents     OrderDocument[]
   reviews       ServiceReview[]
+  eventLogs     OrderEventLog[]
+  certificates  ProductCertificate[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -177,6 +291,8 @@ model Order {
   @@index([customerId])
   @@index([providerId])
   @@index([status])
+  @@index([customerProfileId])
+  @@index([clientProductId])
 }
 
 model OrderItem {
@@ -239,6 +355,26 @@ model OrderStatusHistory {
 
   @@index([orderId])
   @@index([changedByUserId])
+}
+
+model OrderEventLog {
+  id              String         @id @default(cuid())
+  orderId         String
+  changedByUserId String
+  type            OrderEventType
+  message         String
+  field           String?
+  oldValue        String?
+  newValue        String?
+
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  changedBy User  @relation("OrderEventChangedBy", fields: [changedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([changedByUserId])
+  @@index([type])
 }
 
 model OrderDocument {
