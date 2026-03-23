@@ -11,6 +11,7 @@ import OrderDetails from "./pages/OrderDetails";
 import ProviderOrders from "./pages/ProviderOrders";
 import ProviderOrderDetails from "./pages/ProviderOrderDetails";
 import ProviderServices from "./pages/ProviderServices";
+import ProviderCabinetProfile from "./pages/ProviderCabinetProfile";
 import ProviderProfile from "./pages/ProviderProfile";
 import AdminPanel from "./pages/AdminPanel";
 
@@ -69,6 +70,7 @@ export default function App() {
                 {user.role === "PROVIDER" && (
                   <>
                     <Link to="/provider/orders">Кабинет заявок</Link>
+                    <Link to="/provider/profile">Профиль провайдера</Link>
                     <Link to="/provider/services">Мои услуги</Link>
                   </>
                 )}
@@ -97,6 +99,7 @@ export default function App() {
             <Route path="/orders/:id" element={<OrderDetails />} />
             <Route path="/provider/orders" element={<ProviderOrders />} />
             <Route path="/provider/orders/:id" element={<ProviderOrderDetails />} />
+            <Route path="/provider/profile" element={user?.role === "PROVIDER" ? <ProviderCabinetProfile /> : <Navigate to="/" />}/>
             <Route path="/provider/services" element={<ProviderServices />} />
             <Route path="/admin" element={<AdminPanel />} />
             <Route path="*" element={<Navigate to="/" />} />
