@@ -7,10 +7,14 @@ servicesRouter.get("/", async (req, res) => {
   const search = (req.query.search || "").toString().trim();
   const tag = (req.query.tag || "").toString().trim();
   const providerId = (req.query.provider || "").toString().trim();
+  const category = (req.query.category || "").toString().trim();
+  const certificationKind = (req.query.certificationKind || "").toString().trim();
 
   const where = {
     isActive: true,
     ...(providerId ? { providerId } : {}),
+    ...(category ? { category } : {}),
+    ...(certificationKind ? { certificationKind } : {}),
     ...(search
       ? {
           OR: [
@@ -31,7 +35,9 @@ servicesRouter.get("/", async (req, res) => {
           orgName: true,
           publicSlug: true,
           logoUrl: true,
-          verificationStatus: true
+          verificationStatus: true,
+          ratingAvg: true,
+          ratingCount: true
         }
       },
       tags: { include: { tag: true } }
@@ -54,9 +60,14 @@ servicesRouter.get("/", async (req, res) => {
       internalCode: s.internalCode,
       title: s.title,
       description: s.description,
+      category: s.category,
+      certificationKind: s.certificationKind,
       priceFrom: s.priceFrom,
       etaDaysFrom: s.etaDaysFrom,
       imageUrl: s.imageUrl,
+      ratingAvg: s.ratingAvg,
+      ratingCount: s.ratingCount,
+      trustSignal: s.provider.verificationStatus === "APPROVED" ? "VERIFIED_PROVIDER" : null,
       tags: s.tags.map((x) => ({ id: x.tag.id, name: x.tag.name, slug: x.tag.slug }))
     }))
   });
@@ -72,7 +83,9 @@ servicesRouter.get("/:id", async (req, res) => {
           orgName: true,
           publicSlug: true,
           logoUrl: true,
-          verificationStatus: true
+          verificationStatus: true,
+          ratingAvg: true,
+          ratingCount: true
         }
       },
       tags: { include: { tag: true } }
@@ -91,9 +104,14 @@ servicesRouter.get("/:id", async (req, res) => {
       internalCode: service.internalCode,
       title: service.title,
       description: service.description,
+      category: service.category,
+      certificationKind: service.certificationKind,
       priceFrom: service.priceFrom,
       etaDaysFrom: service.etaDaysFrom,
       imageUrl: service.imageUrl,
+      ratingAvg: service.ratingAvg,
+      ratingCount: service.ratingCount,
+      trustSignal: service.provider.verificationStatus === "APPROVED" ? "VERIFIED_PROVIDER" : null,
       tags: service.tags.map((x) => ({ id: x.tag.id, name: x.tag.name, slug: x.tag.slug }))
     }
   });

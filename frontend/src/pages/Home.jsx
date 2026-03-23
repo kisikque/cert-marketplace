@@ -1,162 +1,132 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { apiFetch } from "../api";
-import { useAuthContext } from "../AuthContext";
-import { addItem, clearCart } from "../cart";
+import { SERVICE_CATEGORIES } from "../serviceCategories";
 
 const API_BASE = "http://localhost:3001";
+const getImageSrc = (value) => (value?.startsWith("http") ? value : `${API_BASE}${value}`);
 
 export default function Home() {
-  const nav = useNavigate();
-  const { user } = useAuthContext();
-
-  const [services, setServices] = useState([]);
-  const [tags, setTags] = useState([]);
+  const [topProviders, setTopProviders] = useState([]);
   const [error, setError] = useState(null);
-  const [search, setSearch] = useState("");
-  const [activeTag, setActiveTag] = useState("");
 
   useEffect(() => {
-    apiFetch("/tags")
-      .then((d) => setTags(d.tags || []))
-      .catch(() => setTags([]));
+    apiFetch("/providers/top/list")
+      .then((d) => setTopProviders(d.providers || []))
+      .catch((e) => setError(e?.error || "Ошибка загрузки главной страницы"));
   }, []);
 
-  useEffect(() => {
-    const qs = new URLSearchParams();
-    if (search.trim()) qs.set("search", search.trim());
-
-    apiFetch(`/services?${qs.toString()}`)
-      .then((d) => setServices(d.services || []))
-      .catch((e) => setError(e?.error || "Ошибка загрузки услуг"));
-  }, [search]);
-
-  const filtered = useMemo(() => {
-    if (!activeTag) return services;
-    return services.filter((s) => (s.tags || []).some((t) => t.slug === activeTag));
-  }, [services, activeTag]);
-
-  function addToCart(service) {
-    if (!user) {
-      nav("/login");
-      return;
-    }
-
-    const res = addItem(service);
-    if (!res.ok && res.reason === "DIFFERENT_PROVIDER") {
-      const ok = confirm("В корзине услуги другого провайдера. Очистить корзину и добавить эту услугу?");
-      if (!ok) return;
-
-      clearCart();
-      const res2 = addItem(service);
-      if (res2.ok) nav("/cart");
-      return;
-    }
-
-    nav("/cart");
-  }
+  const howItWorks = useMemo(
+    () => [
+      "Выберите нужную категорию и перейдите в тематический раздел каталога.",
+      "Изучите карточки услуг, рейтинг и профиль проверенного продавца.",
+      "Оформите заявку, загрузите документы и общайтесь с провайдером в процессе исполнения."
+    ],
+    []
+  );
 
   return (
-    <div>
-      <h2>Витрина услуг</h2>
-
-      <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
-        <input
-          placeholder="Поиск по услугам..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ flex: 1, padding: 8 }}
-        />
-        {activeTag && <button onClick={() => setActiveTag("")}>Сбросить тег</button>}
-      </div>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        {tags.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setActiveTag((prev) => (prev === t.slug ? "" : t.slug))}
-            style={{
-              borderRadius: 999,
-              padding: "4px 10px",
-              border: "1px solid #ddd",
-              background: activeTag === t.slug ? "#eee" : "white"
-            }}
-          >
-            {t.name}
-          </button>
-        ))}
-      </div>
+    <div style={{ display: "grid", gap: 28 }}>
+      <section style={{ padding: 24, borderRadius: 24, background: "linear-gradient(135deg, #f5f3ff, #f8fafc)" }}>
+        <h1 style={{ marginTop: 0, marginBottom: 8 }}>Выберите направление и найдите подходящего провайдера</h1>
+        <p style={{ maxWidth: 760, marginBottom: 0 }}>
+          Разделили каталог на отдельные сценарии: сертификация, сопровождение и консультации. На главной собрали удобные точки входа и лучших продавцов.
+        </p>
+      </section>
 
       {error && <p style={{ color: "crimson" }}>{String(error)}</p>}
 
-      {filtered.length === 0 ? (
-        <p>Ничего не найдено.</p>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-          {filtered.map((service) => (
-            <div key={service.id} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <div
-                  style={{
-                    width: 42,
-                    height: 42,
-                    borderRadius: 12,
-                    overflow: "hidden",
-                    border: "1px solid #ddd",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: "#fafafa",
-                    flexShrink: 0
-                  }}
-                >
-                  {service.providerLogoUrl ? (
-                    <img
-                      src={`${API_BASE}${service.providerLogoUrl}`}
-                      alt={service.providerName}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  ) : (
-                    <span style={{ fontSize: 14, opacity: 0.35 }}>{service.providerName.slice(0, 1)}</span>
-                  )}
-                </div>
-                <div>
-                  {service.providerSlug ? (
-                    <Link to={`/providers/${service.providerSlug}`} style={{ fontSize: 12, opacity: 0.8 }}>
-                      {service.providerName}
+      <section>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
+          {SERVICE_CATEGORIES.map((category) => (
+            <Link
+              key={category.value}
+              to={`/services/${category.slug}`}
+              style={{
+                textDecoration: "none",
+                color: "inherit",
+                borderRadius: 24,
+                padding: 24,
+                minHeight: 220,
+                background: category.accent,
+                border: "1px solid #e5e7eb",
+                display: "grid",
+                alignContent: "space-between"
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 28, marginBottom: 12 }}>{category.value === "CERTIFICATION" ? "🧾" : category.value === "SUPPORT" ? "🤝" : "💬"}</div>
+                <h2 style={{ margin: 0 }}>{category.title}</h2>
+                <p style={{ marginBottom: 0 }}>{category.description}</p>
+              </div>
+              <strong>Перейти в раздел →</strong>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section style={{ display: "grid", gap: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+          <h2 style={{ margin: 0 }}>Лучшие продавцы</h2>
+          <span style={{ fontSize: 13, opacity: 0.7 }}>Сортировка по рейтингу, отзывам и активности</span>
+        </div>
+        {topProviders.length === 0 ? (
+          <p>Пока не хватает данных для блока лучших продавцов.</p>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
+            {topProviders.map((provider) => (
+              <article key={provider.id} style={{ border: "1px solid #ddd", borderRadius: 18, padding: 16, display: "grid", gap: 12 }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                  <div style={{ width: 56, height: 56, borderRadius: 16, overflow: "hidden", background: "#fafafa", border: "1px solid #ddd" }}>
+                    {provider.logoUrl ? <img src={getImageSrc(provider.logoUrl)} alt={provider.orgName} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
+                  </div>
+                  <div>
+                    <Link to={`/providers/${provider.publicSlug}`} style={{ fontWeight: 700 }}>
+                      {provider.orgName}
                     </Link>
-                  ) : (
-                    <div style={{ fontSize: 12, opacity: 0.7 }}>{service.providerName}</div>
-                  )}
-                  {service.providerVerificationStatus === "APPROVED" && (
-                    <div style={{ fontSize: 11, color: "#166534" }}>Проверенный провайдер</div>
-                  )}
+                    <div style={{ fontSize: 13, color: "#166534" }}>Проверенный продавец</div>
+                  </div>
                 </div>
-              </div>
-              <div style={{ fontWeight: 700, marginTop: 10 }}>{service.title}</div>
-              <div style={{ fontSize: 13, marginTop: 6 }}>{service.description}</div>
-              <div style={{ marginTop: 8, fontSize: 13 }}>
-                <b>от {service.priceFrom ?? "—"} ₽</b> • срок от {service.etaDaysFrom ?? "—"} дн.
-              </div>
+                <div style={{ fontSize: 14 }}>{provider.ratingCount ? `★ ${provider.ratingAvg.toFixed(1)} · ${provider.ratingCount} отзывов` : "Пока без отзывов"}</div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {provider.services.map((service) => (
+                    <div key={service.id} style={{ fontSize: 14, padding: "8px 10px", borderRadius: 12, background: "#f8fafc" }}>
+                      <div style={{ fontWeight: 600 }}>{service.title}</div>
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>от {service.priceFrom ?? "—"} ₽</div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
-              <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {(service.tags || []).map((tag) => (
-                  <span
-                    key={tag.id}
-                    style={{ fontSize: 12, padding: "2px 8px", borderRadius: 999, border: "1px solid #ddd" }}
-                  >
-                    {tag.name}
-                  </span>
-                ))}
-              </div>
-
-              <button style={{ marginTop: 10 }} onClick={() => addToCart(service)}>
-                В корзину
-              </button>
+      <section style={{ display: "grid", gap: 14 }}>
+        <h2 style={{ margin: 0 }}>Как это работает</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
+          {howItWorks.map((item, index) => (
+            <div key={item} style={{ border: "1px solid #ddd", borderRadius: 18, padding: 18, background: "#fff" }}>
+              <div style={{ fontSize: 26, marginBottom: 10 }}>{index + 1}</div>
+              <div>{item}</div>
             </div>
           ))}
         </div>
-      )}
+      </section>
+
+      <section style={{ border: "1px solid #ddd", borderRadius: 20, padding: 20 }}>
+        <h2 style={{ marginTop: 0 }}>FAQ</h2>
+        <div style={{ display: "grid", gap: 12 }}>
+          <div>
+            <strong>Как выбрать категорию?</strong>
+            <div>Если нужен выпуск разрешительного документа — выбирайте сертификацию. Если нужен полный project management — сопровождение. Если нужен разбор требований и стратегии — консультации.</div>
+          </div>
+          <div>
+            <strong>Как формируется блок лучших продавцов?</strong>
+            <div>Приоритет получают проверенные провайдеры с отзывами, высоким рейтингом и активными услугами.</div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
