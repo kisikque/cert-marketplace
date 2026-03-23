@@ -35,6 +35,8 @@ export default function ProviderServices() {
   const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [error, setError] = useState(null);
+  const [verificationBlockedModalOpen, setVerificationBlockedModalOpen] = useState(false);
+  const [verificationBlockedMessage, setVerificationBlockedMessage] = useState("");
 
   const [internalCode, setInternalCode] = useState("");
   const [title, setTitle] = useState("");
@@ -132,16 +134,26 @@ export default function ProviderServices() {
   }
 
   async function toggleActive(service) {
+    const nextIsActive = !service.isActive;
+
+    if (nextIsActive && verificationMeta?.verificationStatus !== "APPROVED") {
+      setVerificationBlockedMessage(
+       "Невозможно включить услугу, пока аккаунт провайдера не подтверждён. Загрузите документы и дождитесь одобрения."
+      );
+      setVerificationBlockedModalOpen(true);
+      return;
+    }
+
     try {
       await apiFetch(`/provider/services/${service.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ isActive: !service.isActive })
+        body: JSON.stringify({ isActive: nextIsActive }),
       });
       await load();
     } catch (e) {
       setError(e?.error || "Не удалось изменить статус услуги");
     }
-  }
+}
 
   async function softDelete(id) {
     await apiFetch(`/provider/services/${id}`, { method: "DELETE" });
@@ -513,6 +525,52 @@ export default function ProviderServices() {
                 <button type="button" onClick={() => toggleActive(service)} style={{ marginLeft: 8 }}>
                   {service.isActive ? "Выключить" : "Включить"}
                 </button>
+                {verificationBlockedModalOpen && (
+                  <div
+                    style={{
+                      position: "fixed",
+                      inset: 0,
+                      background: "rgba(0, 0, 0, 0.45)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 16,
+                      zIndex: 1000,
+                    }}
+                    onClick={() => setVerificationBlockedModalOpen(false)}
+                  >
+                    <div
+                      style={{
+                        width: "100%",
+                        maxWidth: 440,
+                        background: "#fff",
+                        borderRadius: 16,
+                        padding: 20,
+                        boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
+                        display: "grid",
+                        gap: 14,
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ fontSize: 22, fontWeight: 700 }}>
+                        Нельзя включить услугу
+                      </div>
+
+                      <div style={{ lineHeight: 1.5 }}>
+                        {verificationBlockedMessage}
+                      </div>
+
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                        <button
+                          type="button"
+                          onClick={() => setVerificationBlockedModalOpen(false)}
+                        >
+                          Понятно
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <button type="button" onClick={() => softDelete(service.id)} style={{ marginLeft: 8 }}>
                   Удалить
                 </button>
