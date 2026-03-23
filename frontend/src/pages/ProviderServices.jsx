@@ -35,6 +35,7 @@ export default function ProviderServices() {
   const [etaDaysFrom, setEtaDaysFrom] = useState("");
   const [imageUrl, setImageUrl] = useState("");
 
+  const [newServiceTagIds, setNewServiceTagIds] = useState([]);
   const [tagEditorId, setTagEditorId] = useState(null);
   const [selectedTagIds, setSelectedTagIds] = useState([]);
   const [savingTags, setSavingTags] = useState(false);
@@ -81,17 +82,26 @@ export default function ProviderServices() {
         nextImageUrl = uploadData.imageUrl;
       }
 
-      await apiFetch("/provider/services", {
-        method: "POST",
-        body: JSON.stringify({
-          internalCode,
-          title,
-          description,
-          priceFrom: priceFrom ? Number(priceFrom) : null,
-          etaDaysFrom: etaDaysFrom ? Number(etaDaysFrom) : null,
-          imageUrl: nextImageUrl,
-        }),
-      });
+        const created = await apiFetch("/provider/services", {
+    method: "POST",
+    body: JSON.stringify({
+      internalCode,
+      title,
+      description,
+      priceFrom: priceFrom ? Number(priceFrom) : null,
+      etaDaysFrom: etaDaysFrom ? Number(etaDaysFrom) : null,
+      imageUrl: nextImageUrl,
+    }),
+  });
+
+  const createdServiceId = created?.service?.id;
+
+  if (createdServiceId && newServiceTagIds.length > 0) {
+    await apiFetch(`/provider/services/${createdServiceId}/tags`, {
+      method: "PUT",
+      body: JSON.stringify({ tagIds: newServiceTagIds }),
+    });
+  }
 
       setInternalCode("");
       setTitle("");
@@ -100,6 +110,7 @@ export default function ProviderServices() {
       setEtaDaysFrom("");
       setImageUrl("");
       setServiceImageFile(null);
+      setNewServiceTagIds([]);
 
       await load();
     } catch (e) {
@@ -164,6 +175,14 @@ export default function ProviderServices() {
         : [...prev, tagId]
     );
   }
+
+  function toggleNewServiceTag(tagId) {
+  setNewServiceTagIds((prev) =>
+    prev.includes(tagId)
+      ? prev.filter((x) => x !== tagId)
+      : [...prev, tagId]
+  );
+}
 
   async function saveTags() {
     if (!tagEditorId) return;
@@ -273,6 +292,33 @@ export default function ProviderServices() {
             accept="image/png,image/jpeg,image/webp"
             onChange={(e) => setServiceImageFile(e.target.files?.[0] || null)}
           />
+          <label>Теги услуги</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {allTags.length === 0 ? (
+              <div style={{ fontSize: 13, opacity: 0.7 }}>Теги пока не созданы.</div>
+            ) : (
+              allTags.map((tag) => {
+                const checked = newServiceTagIds.includes(tag.id);
+
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleNewServiceTag(tag.id)}
+                    style={{
+                      border: "1px solid #ddd",
+                      borderRadius: 999,
+                      padding: "8px 12px",
+                      background: checked ? "#eef6ff" : "#fff",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {tag.name}
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -380,7 +426,7 @@ export default function ProviderServices() {
                     }}
                   >
                     {service.priceFrom != null && (
-                      <span>Цена от: {service.priceFrom}</span>
+                      <span>Цена: {service.priceFrom}</span>
                     )}
 
                     {service.etaDaysFrom != null && (
