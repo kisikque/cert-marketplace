@@ -13,6 +13,7 @@ import { documentsRouter } from "./documents/routes.js";
 import { providerRouter } from "./provider/routes.js";
 import { adminRouter } from "./admin/routes.js";
 import { providerVerificationRouter } from "./providerVerification/routes.js";
+import { customerRouter } from "./customer/routes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,6 +34,7 @@ app.use(express.json());
 app.use(sessionMiddleware());
 app.use("/provider-logos", express.static(path.resolve("provider-logos")));
 app.use("/service-images", express.static(path.resolve("service-images")));
+app.use("/product-documents", express.static(path.resolve("product-documents")));
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
@@ -44,6 +46,7 @@ app.use("/api/tags", tagsRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/provider", providerRouter);
 app.use("/api/provider-verification-docs", providerVerificationRouter);
+app.use("/api/customer", customerRouter);
 app.use("/api/admin", adminRouter);
 
 const publicDir = path.join(__dirname, "..", "public");
