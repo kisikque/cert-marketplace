@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiFetch, apiUpload } from "../api";
-import EsiaPlaceholder from "../components/EsiaPlaceholder";
 
 const PROVIDER_DOCUMENT_TYPES = [
   { value: "REGISTRATION_DOC", label: "Регистрационный документ" },
@@ -13,23 +12,9 @@ function emptyProviderDoc() {
   return { documentType: PROVIDER_DOCUMENT_TYPES[0].value, file: null };
 }
 
-const customerInitial = {
-  fullName: "",
-  companyName: "",
-  contactName: "",
-  phone: "",
-  address: "",
-  inn: "",
-  kpp: "",
-  ogrn: "",
-  position: "",
-  legalEntityType: "Юрлицо / ИП"
-};
-
 export default function Register({ onLogin }) {
   const nav = useNavigate();
   const [accountType, setAccountType] = useState("CUSTOMER");
-  const [customerAccountKind, setCustomerAccountKind] = useState("INDIVIDUAL");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,14 +24,8 @@ export default function Register({ onLogin }) {
   const [address, setAddress] = useState("");
   const [description, setDescription] = useState("");
   const [providerDocs, setProviderDocs] = useState([emptyProviderDoc()]);
-  const [customerProfile, setCustomerProfile] = useState(customerInitial);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  const customerTitle = useMemo(
-    () => (customerAccountKind === "BUSINESS" ? "Юрлицо / ИП" : "Физическое лицо"),
-    [customerAccountKind]
-  );
 
   function updateProviderDoc(index, patch) {
     setProviderDocs((prev) => prev.map((doc, i) => (i === index ? { ...doc, ...patch } : doc)));
@@ -58,10 +37,6 @@ export default function Register({ onLogin }) {
 
   function removeProviderDocField(index) {
     setProviderDocs((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  function updateCustomerField(field, value) {
-    setCustomerProfile((prev) => ({ ...prev, [field]: value }));
   }
 
   async function uploadProviderDocuments() {
@@ -90,7 +65,6 @@ export default function Register({ onLogin }) {
         method: "POST",
         body: JSON.stringify({
           accountType,
-          customerAccountKind,
           email,
           password,
           displayName,
@@ -98,8 +72,7 @@ export default function Register({ onLogin }) {
           inn: accountType === "PROVIDER" ? inn : undefined,
           phone: accountType === "PROVIDER" ? phone : undefined,
           address: accountType === "PROVIDER" ? address : undefined,
-          description: accountType === "PROVIDER" ? description : undefined,
-          customerProfile: accountType === "CUSTOMER" ? customerProfile : undefined
+          description: accountType === "PROVIDER" ? description : undefined
         })
       });
 
@@ -108,7 +81,7 @@ export default function Register({ onLogin }) {
       }
 
       await onLogin?.();
-      nav(accountType === "PROVIDER" ? "/provider/services" : "/products");
+      nav(accountType === "PROVIDER" ? "/provider/services" : "/");
     } catch (err) {
       setError(err?.error || "Ошибка регистрации");
     } finally {
@@ -117,7 +90,7 @@ export default function Register({ onLogin }) {
   }
 
   return (
-    <div style={{ maxWidth: 760 }}>
+    <div style={{ maxWidth: 680 }}>
       <h2>Регистрация</h2>
       <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -137,34 +110,8 @@ export default function Register({ onLogin }) {
           </button>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <div style={{ fontSize: 14, opacity: 0.72 }}>
-            {accountType === "CUSTOMER" ? `Регистрация покупателя: ${customerTitle}` : "Регистрация провайдера услуг"}
-          </div>
-          <EsiaPlaceholder label={accountType === "CUSTOMER" ? "Войти при помощи Госуслуг" : "Регистрация через Госуслуги"} />
-        </div>
-
-        {accountType === "CUSTOMER" && (
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={() => setCustomerAccountKind("INDIVIDUAL")}
-              style={{ background: customerAccountKind === "INDIVIDUAL" ? "#e8fff5" : "white" }}
-            >
-              Физическое лицо
-            </button>
-            <button
-              type="button"
-              onClick={() => setCustomerAccountKind("BUSINESS")}
-              style={{ background: customerAccountKind === "BUSINESS" ? "#e8fff5" : "white" }}
-            >
-              Юрлицо / ИП
-            </button>
-          </div>
-        )}
-
         <label style={{ display: "grid", gap: 6 }}>
-          <span>{accountType === "PROVIDER" ? "Контактное лицо" : "Имя для входа / отображения"}</span>
+          <span>{accountType === "PROVIDER" ? "Контактное лицо" : "Отображаемое имя"}</span>
           <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
         </label>
 
@@ -177,62 +124,6 @@ export default function Register({ onLogin }) {
           <span>Пароль (минимум 6 символов)</span>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </label>
-
-        {accountType === "CUSTOMER" && (
-          <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16, display: "grid", gap: 10 }}>
-            <h3 style={{ margin: 0 }}>Основные данные для дальнейшей сертификации</h3>
-            {customerAccountKind === "INDIVIDUAL" ? (
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>ФИО</span>
-                <input value={customerProfile.fullName} onChange={(e) => updateCustomerField("fullName", e.target.value)} />
-              </label>
-            ) : (
-              <>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span>Название компании / ИП</span>
-                  <input value={customerProfile.companyName} onChange={(e) => updateCustomerField("companyName", e.target.value)} />
-                </label>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span>Контактное лицо</span>
-                  <input value={customerProfile.contactName} onChange={(e) => updateCustomerField("contactName", e.target.value)} />
-                </label>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span>Должность</span>
-                  <input value={customerProfile.position} onChange={(e) => updateCustomerField("position", e.target.value)} />
-                </label>
-              </>
-            )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Телефон</span>
-                <input value={customerProfile.phone} onChange={(e) => updateCustomerField("phone", e.target.value)} />
-              </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Адрес</span>
-                <input value={customerProfile.address} onChange={(e) => updateCustomerField("address", e.target.value)} />
-              </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>ИНН</span>
-                <input value={customerProfile.inn} onChange={(e) => updateCustomerField("inn", e.target.value)} />
-              </label>
-              {customerAccountKind === "BUSINESS" && (
-                <>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span>КПП</span>
-                    <input value={customerProfile.kpp} onChange={(e) => updateCustomerField("kpp", e.target.value)} />
-                  </label>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span>ОГРН / ОГРНИП</span>
-                    <input value={customerProfile.ogrn} onChange={(e) => updateCustomerField("ogrn", e.target.value)} />
-                  </label>
-                </>
-              )}
-            </div>
-            <div style={{ fontSize: 13, opacity: 0.74 }}>
-              Можно заполнять не все поля сразу: обязательной остается только базовая информация для выбранного типа аккаунта.
-            </div>
-          </div>
-        )}
 
         {accountType === "PROVIDER" && (
           <>

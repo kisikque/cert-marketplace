@@ -33,29 +33,8 @@ async function main() {
     data: { email: "provider@demo.ru", passwordHash: providerPass, role: "PROVIDER", displayName: "Provider" }
   });
 
-  const customerUser = await prisma.user.create({
-    data: {
-      email: "customer@demo.ru",
-      passwordHash: customerPass,
-      role: "CUSTOMER",
-      displayName: "Customer",
-      customerProfile: {
-        create: {
-          accountKind: "BUSINESS",
-          legalEntityType: "Юрлицо / ИП",
-          companyName: 'ООО "Покупатель Плюс"',
-          contactName: "Ирина Смирнова",
-          phone: "+7 (999) 123-45-67",
-          address: "Москва, ул. Примерная, 12",
-          inn: "7701234567",
-          kpp: "770101001",
-          ogrn: "1027700132195",
-          position: "Менеджер по сертификации",
-          esiaIntegrationNote: "В дальнейшем планируется сделать регистрацию через ЕСИА с подтягиванием данных"
-        }
-      }
-    },
-    include: { customerProfile: true }
+  await prisma.user.create({
+    data: { email: "customer@demo.ru", passwordHash: customerPass, role: "CUSTOMER", displayName: "Customer" }
   });
 
   const provider = await prisma.providerProfile.create({
@@ -91,18 +70,6 @@ async function main() {
       verificationStatus: "APPROVED",
       submittedAt: new Date(),
       verifiedAt: new Date()
-    }
-  });
-
-  const customerProfileId = customerUser.customerProfile.id;
-  const clientProduct = await prisma.clientProduct.create({
-    data: {
-      customerProfileId,
-      kind: "PRODUCT",
-      title: "Кухонный блендер SmartMix X1",
-      description: "Небольшой кухонный блендер для домашнего использования.",
-      specs: "220В, 800Вт, пластиковый корпус, 2 режима скорости",
-      categoryLabel: "Бытовая техника"
     }
   });
 
@@ -180,7 +147,7 @@ async function main() {
     ]
   });
 
-  const createdServices = await prisma.service.findMany({ orderBy: { createdAt: "asc" } });
+  const createdServices = await prisma.service.findMany();
   const bySlug = (slug) => allTags.find((t) => t.slug === slug)?.id;
 
   await prisma.serviceTag.createMany({

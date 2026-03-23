@@ -37,44 +37,31 @@ export default function OrderDetails() {
   const [uploading, setUploading] = useState(false);
   const [reviewDrafts, setReviewDrafts] = useState({});
   const [reviewSavingId, setReviewSavingId] = useState(null);
-  const [profileDraft, setProfileDraft] = useState({});
-  const [productDraft, setProductDraft] = useState({});
-  const [savingSection, setSavingSection] = useState(null);
 
   useEffect(() => {
     if (!user) nav("/login");
   }, [user, nav]);
 
-  const loadOrder = useCallback(async () => {
-    const d = await apiFetch(`/orders/${id}`);
-    setOrder(d.order);
-    setProfileDraft(profileDraftFromOrder(d.order));
-    setProductDraft(productDraftFromOrder(d.order));
-    setReviewDrafts(
-      Object.fromEntries(
-        (d.order.items || []).map((item) => [
-          item.orderItemId,
-          {
-            rating: item.review?.rating || 5,
-            text: item.review?.text || "",
-            isAnonymous: item.review?.isAnonymous ?? true,
-            displayUserId: item.review?.displayUserId ?? false
-          }
-        ])
-      )
-    );
-  }, [id]);
-
   useEffect(() => {
-    async function run() {
-      try {
-        await loadOrder();
-      } catch {
-        setError("Не удалось загрузить заявку");
-      }
-    }
-    run();
-  }, [loadOrder]);
+    apiFetch(`/orders/${id}`)
+      .then((d) => {
+        setOrder(d.order);
+        setReviewDrafts(
+          Object.fromEntries(
+            (d.order.items || []).map((item) => [
+              item.orderItemId,
+              {
+                rating: item.review?.rating || 5,
+                text: item.review?.text || "",
+                isAnonymous: item.review?.isAnonymous ?? true,
+                displayUserId: item.review?.displayUserId ?? false
+              }
+            ])
+          )
+        );
+      })
+      .catch(() => setError("Не удалось загрузить заявку"));
+  }, [id]);
 
   async function uploadFile(file) {
     setUploadError(null);
@@ -82,8 +69,11 @@ export default function OrderDetails() {
     try {
       const fd = new FormData();
       fd.append("file", file);
+
       await apiUpload(`/documents/orders/${order.id}`, fd);
-      await loadOrder();
+
+      const d = await apiFetch(`/orders/${order.id}`);
+      setOrder(d.order);
     } catch (e) {
       setUploadError(e?.error || "Ошибка загрузки");
     } finally {
@@ -99,43 +89,12 @@ export default function OrderDetails() {
         method: hasExistingReview ? "PATCH" : "POST",
         body: JSON.stringify(reviewDrafts[orderItemId])
       });
-      await loadOrder();
+      const d = await apiFetch(`/orders/${order.id}`);
+      setOrder(d.order);
     } catch (e) {
       setError(e?.error || "Не удалось сохранить отзыв");
     } finally {
       setReviewSavingId(null);
-    }
-  }
-
-  async function saveProfile() {
-    setSavingSection("profile");
-    setError(null);
-    try {
-      await apiFetch(`/orders/${order.id}/profile`, {
-        method: "PATCH",
-        body: JSON.stringify(profileDraft)
-      });
-      await loadOrder();
-    } catch (e) {
-      setError(e?.error || "Не удалось обновить профиль");
-    } finally {
-      setSavingSection(null);
-    }
-  }
-
-  async function saveProduct() {
-    setSavingSection("product");
-    setError(null);
-    try {
-      await apiFetch(`/orders/${order.id}/product`, {
-        method: "PATCH",
-        body: JSON.stringify(productDraft)
-      });
-      await loadOrder();
-    } catch (e) {
-      setError(e?.error || "Не удалось обновить продукт");
-    } finally {
-      setSavingSection(null);
     }
   }
 
@@ -362,22 +321,8 @@ export default function OrderDetails() {
         ))}
       </ul>
 
-      <h3>Лог изменений</h3>
-      {order.eventLogs.length === 0 ? (
-        <p>Изменений пока нет.</p>
-      ) : (
-        <ul>
-          {order.eventLogs.map((log) => (
-            <li key={log.id}>
-              {new Date(log.createdAt).toLocaleString()} — <b>{log.message}</b>
-              {log.field ? ` · ${log.field}` : ""}
-              {log.oldValue || log.newValue ? ` (${log.oldValue || "—"} → ${log.newValue || "—"})` : ""}
-            </li>
-          ))}
-        </ul>
-      )}
+      <h3>Документы</h3>
 
-      <h3>Документы заявки</h3>
       <div style={{ marginBottom: 10 }}>
         <input
           type="file"
