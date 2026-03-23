@@ -16,6 +16,15 @@ async function buildSessionUser(userId) {
           verificationStatus: true,
           verificationComment: true
         }
+      },
+      customerProfile: {
+        select: {
+          id: true,
+          accountKind: true,
+          companyName: true,
+          fullName: true,
+          contactName: true
+        }
       }
     }
   });
@@ -30,7 +39,11 @@ async function buildSessionUser(userId) {
     providerProfileId: user.providerProfile?.id ?? null,
     providerOrgName: user.providerProfile?.orgName ?? null,
     providerVerificationStatus: user.providerProfile?.verificationStatus ?? null,
-    providerVerificationComment: user.providerProfile?.verificationComment ?? null
+    providerVerificationComment: user.providerProfile?.verificationComment ?? null,
+    customerProfileId: user.customerProfile?.id ?? null,
+    customerAccountKind: user.customerProfile?.accountKind ?? null,
+    customerProfileName:
+      user.customerProfile?.companyName || user.customerProfile?.fullName || user.customerProfile?.contactName || null
   };
 }
 
@@ -68,7 +81,9 @@ authRouter.post("/register", async (req, res) => {
     inn,
     phone,
     address,
-    description
+    description,
+    customerAccountKind = "INDIVIDUAL",
+    customerProfile
   } = req.body ?? {};
 
   if (!email || !password) return res.status(400).json({ error: "email/password required" });
@@ -128,7 +143,11 @@ authRouter.post("/register", async (req, res) => {
               }
             }
           }
-        : {})
+        : {
+            customerProfile: {
+              create: normalizedCustomerProfile
+            }
+          })
     }
   });
 

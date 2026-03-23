@@ -367,60 +367,12 @@ providerRouter.patch("/services/:id", requireAuth, requireRole(["PROVIDER"]), as
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
 
-  const existing = await prisma.service.findFirst({ where: { id: req.params.id, providerId: pp.id } });
-  if (!existing) return res.status(404).json({ error: "NOT_FOUND" });
+  const service = await prisma.service.findFirst({ where: { id: req.params.id, providerId: pp.id } });
+  if (!service) return res.status(404).json({ error: "SERVICE_NOT_FOUND" });
 
   const patch = req.body ?? {};
-  if (patch.isActive === true && !canPublishServices(pp)) {
-    return res.status(403).json({ error: "PROVIDER_NOT_VERIFIED" });
-  }
-  const normalizedCategory = patch.category !== undefined ? normalizeCategory(patch.category) : undefined;
-  if (patch.category !== undefined && !normalizedCategory) {
-    return res.status(400).json({ error: "VALID_CATEGORY_REQUIRED" });
-  }
-  const nextCategory = normalizedCategory ?? existing.category;
-
-  const data = {
-    ...(patch.internalCode != null ? { internalCode: patch.internalCode } : {}),
-    ...(patch.title != null ? { title: patch.title } : {}),
-    ...(patch.description != null ? { description: patch.description } : {}),
-    ...(normalizedCategory !== undefined ? { category: normalizedCategory } : {}),
-    ...(patch.category !== undefined || patch.certificationKind !== undefined
-      ? { certificationKind: normalizeCertificationKind(nextCategory, patch.certificationKind) }
-      : {}),
-    ...(patch.priceFrom !== undefined ? { priceFrom: patch.priceFrom === null ? null : Number(patch.priceFrom) } : {}),
-    ...(patch.etaDaysFrom !== undefined ? { etaDaysFrom: patch.etaDaysFrom === null ? null : Number(patch.etaDaysFrom) } : {}),
-    ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl ? String(patch.imageUrl) : null } : {}),
-    ...(patch.isActive !== undefined ? { isActive: Boolean(patch.isActive) } : {})
-  };
-
-  try {
-    if (patch.imageUrl !== undefined && patch.imageUrl !== existing.imageUrl) {
-      await removeServiceImageIfPresent(existing.imageUrl);
-    }
-    const service = await prisma.service.update({ where: { id: req.params.id }, data });
-    res.json({ service });
-  } catch {
-    return res.status(409).json({ error: "SERVICE_CODE_ALREADY_EXISTS" });
-  }
-);
-
-providerRouter.delete("/services/:id", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
-  const pp = await getProviderProfile(req.session.user.id);
-  if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
-
-  const existing = await prisma.service.findFirst({ where: { id: req.params.id, providerId: pp.id } });
-  if (!existing) return res.status(404).json({ error: "NOT_FOUND" });
-
-  await removeServiceImageIfPresent(existing.imageUrl);
-  await prisma.service.update({ where: { id: req.params.id }, data: { isActive: false } });
-  res.json({ ok: true });
-});
-
-providerRouter.get("/tags", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
-  const tags = await prisma.tag.findMany({ orderBy: { name: "asc" } });
-  res.json({ tags });
-});
+  const normalizedCategory = patch.category === undefined ? service.category : normalizeCategory(patch.category);
+  if (!normalizedCategory) return res.status(400).json({ error: "VALID_CATEGORY_REQUIRED" });
 
   const updated = await prisma.service.update({
     where: { id: service.id },
@@ -444,18 +396,8 @@ providerRouter.delete("/services/:id", requireAuth, requireRole(["PROVIDER"]), a
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
 
-  const { tagIds } = req.body ?? {};
-  if (!Array.isArray(tagIds)) return res.status(400).json({ error: "tagIds required" });
-
   const service = await prisma.service.findFirst({ where: { id: req.params.id, providerId: pp.id } });
-  if (!service) return res.status(404).json({ error: "NOT_FOUND" });
-
-  await prisma.serviceTag.deleteMany({ where: { serviceId: req.params.id } });
-  if (tagIds.length > 0) {
-    await prisma.serviceTag.createMany({
-      data: tagIds.map((tagId) => ({ serviceId: req.params.id, tagId }))
-    });
-  }
+  if (!service) return res.status(404).json({ error: "SERVICE_NOT_FOUND" });
 
   await removeServiceImageIfPresent(service.imageUrl);
   await prisma.service.delete({ where: { id: service.id } });

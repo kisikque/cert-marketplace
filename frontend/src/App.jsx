@@ -14,6 +14,7 @@ import ProviderServices from "./pages/ProviderServices";
 import ProviderProfile from "./pages/ProviderProfile";
 import AdminPanel from "./pages/AdminPanel";
 import ServiceCategoryPage from "./pages/ServiceCategoryPage";
+import MyProducts from "./pages/MyProducts";
 
 function RoleBadge({ role }) {
   const style = {
@@ -65,6 +66,7 @@ export default function App() {
 
                 {user.role === "CUSTOMER" && (
                   <>
+                    <Link to="/products">Мои продукты</Link>
                     <Link to="/orders">Мои заявки</Link>
                     <Link to="/cart">Корзина</Link>
                   </>
@@ -98,6 +100,7 @@ export default function App() {
             <Route path="/login" element={user ? <Navigate to="/" /> : <Login onLogin={refresh} />} />
             <Route path="/register" element={user ? <Navigate to="/" /> : <Register onLogin={refresh} />} />
             <Route path="/cart" element={<CartPage />} />
+            <Route path="/products" element={<MyProducts />} />
             <Route path="/orders" element={<MyOrders />} />
             <Route path="/orders/:id" element={<OrderDetails />} />
             <Route path="/provider/orders" element={<ProviderOrders />} />

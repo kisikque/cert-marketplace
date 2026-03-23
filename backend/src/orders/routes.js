@@ -37,7 +37,107 @@ async function recalculateRatings(serviceId, providerId) {
   ]);
 }
 
-// CUSTOMER: создать заявку из корзины
+function mapOrder(order) {
+  return {
+    id: order.id,
+    status: order.status,
+    customerComment: order.customerComment,
+    providerComment: order.providerComment,
+    createdAt: order.createdAt,
+    providerNeedsAttention: order.providerNeedsAttention,
+    lastCustomerDataChangeAt: order.lastCustomerDataChangeAt,
+    lastCustomerDataChangeType: order.lastCustomerDataChangeType,
+    provider: order.provider
+      ? { id: order.provider.id, orgName: order.provider.orgName, phone: order.provider.phone }
+      : null,
+    customer: order.customer
+      ? { id: order.customer.id, email: order.customer.email, displayName: order.customer.displayName }
+      : null,
+    customerProfile: order.customerProfile,
+    clientProduct: order.clientProduct
+      ? {
+          ...order.clientProduct,
+          documents: (order.clientProduct.documents || []).map((d) => ({
+            id: d.id,
+            fileName: d.fileName,
+            size: d.size,
+            mimeType: d.mimeType,
+            createdAt: d.createdAt
+          })),
+          certificates: (order.clientProduct.certificates || []).map((certificate) => ({
+            id: certificate.id,
+            title: certificate.title,
+            certNumber: certificate.certNumber,
+            status: certificate.status,
+            issuedAt: certificate.issuedAt,
+            orderId: certificate.orderId
+          }))
+        }
+      : null,
+    items: order.items.map((it) => ({
+      serviceId: it.serviceId,
+      orderItemId: it.id,
+      title: it.service.title,
+      qty: it.qty,
+      priceAtPurchase: it.priceAtPurchase,
+      review: it.review
+        ? {
+            id: it.review.id,
+            rating: it.review.rating,
+            text: it.review.text,
+            isAnonymous: it.review.isAnonymous,
+            displayUserId: it.review.displayUserId,
+            createdAt: it.review.createdAt,
+            updatedAt: it.review.updatedAt
+          }
+        : null
+    })),
+    statusHistory: order.statusHistory.map((h) => ({
+      fromStatus: h.fromStatus,
+      toStatus: h.toStatus,
+      comment: h.comment,
+      createdAt: h.createdAt
+    })),
+    eventLogs: (order.eventLogs || []).map((event) => ({
+      id: event.id,
+      type: event.type,
+      message: event.message,
+      field: event.field,
+      oldValue: event.oldValue,
+      newValue: event.newValue,
+      createdAt: event.createdAt
+    })),
+    documents: order.documents.map((d) => ({
+      id: d.id,
+      fileName: d.fileName,
+      mimeType: d.mimeType,
+      size: d.size,
+      createdAt: d.createdAt,
+      uploadedByUserId: d.uploadedByUserId
+    }))
+  };
+}
+
+async function getCustomerProfile(userId) {
+  return prisma.customerProfile.findUnique({ where: { userId } });
+}
+
+async function getOrderForCustomer(orderId, userId) {
+  return prisma.order.findFirst({
+    where: { id: orderId, customerId: userId },
+    include: {
+      provider: { select: { id: true, orgName: true, phone: true } },
+      customer: { select: { id: true, email: true, displayName: true } },
+      customerProfile: true,
+      clientProduct: { include: { documents: { orderBy: { createdAt: "desc" } }, certificates: { orderBy: { issuedAt: "desc" } } } },
+      items: { include: { service: true, review: true } },
+      statusHistory: { orderBy: { createdAt: "asc" } },
+      eventLogs: { orderBy: { createdAt: "desc" } },
+      documents: { orderBy: { createdAt: "desc" } }
+    }
+  });
+}
+
 ordersRouter.post("/", requireAuth, requireRole(["CUSTOMER"]), async (req, res) => {
   const userId = req.session.user.id;
   const { items, customerComment, clientProductId } = req.body ?? {};
@@ -215,75 +315,6 @@ ordersRouter.post("/:id/items/:itemId/review", requireAuth, requireRole(["CUSTOM
     return res.status(400).json({ error: "RATING_MUST_BE_1_TO_5" });
   }
 
-  const order = await prisma.order.findFirst({
-    where: { id, customerId: userId },
-    include: {
-      provider: { select: { id: true, orgName: true, phone: true } },
-      items: { include: { service: true, review: true } },
-      statusHistory: { orderBy: { createdAt: "asc" } },
-      documents: { orderBy: { createdAt: "desc" } }
-    }
-  });
-
-  await recalculateRatings(orderItem.serviceId, orderItem.order.providerId);
-  res.json({ review });
-});
-
-  res.json({
-    order: {
-      id: order.id,
-      status: order.status,
-      customerComment: order.customerComment,
-      providerComment: order.providerComment,
-      createdAt: order.createdAt,
-      provider: order.provider,
-      items: order.items.map((it) => ({
-        serviceId: it.serviceId,
-        orderItemId: it.id,
-        title: it.service.title,
-        qty: it.qty,
-        priceAtPurchase: it.priceAtPurchase,
-        review: it.review
-          ? {
-              id: it.review.id,
-              rating: it.review.rating,
-              text: it.review.text,
-              isAnonymous: it.review.isAnonymous,
-              displayUserId: it.review.displayUserId,
-              createdAt: it.review.createdAt,
-              updatedAt: it.review.updatedAt
-            }
-          : null
-      })),
-      statusHistory: order.statusHistory.map((h) => ({
-        fromStatus: h.fromStatus,
-        toStatus: h.toStatus,
-        comment: h.comment,
-        createdAt: h.createdAt
-      })),
-      documents: order.documents.map((d) => ({
-        id: d.id,
-        fileName: d.fileName,
-        mimeType: d.mimeType,
-        size: d.size,
-        createdAt: d.createdAt,
-        uploadedByUserId: d.uploadedByUserId
-      }))
-    }
-  });
-
-  await recalculateRatings(review.serviceId, review.providerId);
-  res.json({ review: updated });
-});
-
-ordersRouter.post("/:id/items/:itemId/review", requireAuth, requireRole(["CUSTOMER"]), async (req, res) => {
-  const userId = req.session.user.id;
-  const { rating, text, isAnonymous, displayUserId } = req.body ?? {};
-  const normalizedRating = Number(rating);
-  if (!Number.isInteger(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
-    return res.status(400).json({ error: "RATING_MUST_BE_1_TO_5" });
-  }
-
   const orderItem = await prisma.orderItem.findFirst({
     where: { id: req.params.itemId, orderId: req.params.id, order: { customerId: userId } },
     include: { order: true, service: true, review: true }
@@ -335,3 +366,9 @@ ordersRouter.patch("/:id/items/:itemId/review", requireAuth, requireRole(["CUSTO
   await recalculateRatings(review.serviceId, review.providerId);
   res.json({ review: updated });
 });
+
+export async function handleProviderOrderStatusSideEffects(orderId, toStatus, changedByUserId) {
+  if (toStatus === "DONE") {
+    await issueCertificatesForOrder(orderId, changedByUserId);
+  }
+}
