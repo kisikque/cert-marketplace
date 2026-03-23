@@ -309,12 +309,16 @@ export default function ProviderServices() {
                   <span style={{ fontSize: 32, opacity: 0.35 }}>{profile.orgName?.slice(0, 1) || "P"}</span>
                 )}
               </div>
-              <form onSubmit={uploadLogo} style={{ display: "grid", gap: 8 }}>
-                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
-                <button type="submit" disabled={uploadingLogo}>{uploadingLogo ? "Загрузка..." : "Загрузить логотип"}</button>
+              <form onSubmit={uploadLogo} style={{ display: "grid", gap: 8, width: "100%" }}>
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
+                style={{ width: "100%", maxWidth: "100%", fontSize: 12 }} />
+                <button type="submit" disabled={uploadingLogo} style={{ width: "100%" }}>
+                  {uploadingLogo ? "Загрузка..." : "Загрузить логотип"}
+                </button>
               </form>
-              {profile.logoUrl && <button onClick={removeLogo}>Удалить логотип</button>}
-              <div style={{ fontSize: 12, opacity: 0.7 }}>PNG/JPG/WEBP, до 2 MB. Рекомендуемый размер 400×400 px.</div>
+
+              {profile.logoUrl && ( <button onClick={removeLogo} style={{ width: "100%" }}> Удалить логотип</button>)}
+              <div style={{ fontSize: 12, opacity: 0.7, wordBreak: "break-word"}}>PNG/JPG/WEBP, до 2 MB. Рекомендуемый размер 400×400 px.</div>
             </div>
 
             <form onSubmit={saveProfile} style={{ flex: 1, display: "grid", gap: 8, minWidth: 280 }}>
