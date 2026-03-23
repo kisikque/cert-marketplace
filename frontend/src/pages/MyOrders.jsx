@@ -36,7 +36,17 @@ export default function MyOrders() {
                 {new Date(o.createdAt).toLocaleString()} • {o.providerName}
               </div>
               <div style={{ fontWeight: 700 }}>Заявка #{o.id}</div>
+              {o.clientProduct && (
+                <div style={{ marginTop: 4 }}>
+                  Продукт: <b>{o.clientProduct.title}</b> ({o.clientProduct.kind === "PRODUCT" ? "товар" : "услуга"})
+                </div>
+              )}
               <div style={{ marginTop: 6 }}>Статус: <b>{o.status}</b></div>
+              {o.providerNeedsAttention && (
+                <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: "#fff8dd", color: "#6b5700" }}>
+                  Провайдер ещё не обработал последнее изменение ваших данных.
+                </div>
+              )}
               <ul style={{ marginTop: 8 }}>
                 {o.items.map((it, idx) => (
                   <li key={idx}>

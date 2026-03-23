@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
+import EsiaPlaceholder from "../components/EsiaPlaceholder";
 
 export default function Login({ onLogin }) {
   const nav = useNavigate();
@@ -18,7 +19,7 @@ export default function Login({ onLogin }) {
         method: "POST",
         body: JSON.stringify({ email, password })
       });
-      await onLogin?.(); // refresh /me
+      await onLogin?.();
       nav("/");
     } catch (err) {
       setError(err?.error || "Ошибка входа");
@@ -28,8 +29,11 @@ export default function Login({ onLogin }) {
   }
 
   return (
-    <div style={{ maxWidth: 420 }}>
+    <div style={{ maxWidth: 460 }}>
       <h2>Вход</h2>
+      <div style={{ marginBottom: 14 }}>
+        <EsiaPlaceholder label="Войти при помощи Госуслуг" />
+      </div>
       <form onSubmit={submit} style={{ display: "grid", gap: 10 }}>
         <label style={{ display: "grid", gap: 6 }}>
           <span>Email</span>

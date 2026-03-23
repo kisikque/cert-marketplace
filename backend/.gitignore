@@ -1,5 +1,8 @@
 node_modules
-# Keep environment variables out of version control
-.env
+# Default local prisma sqlite config is versioned for easier local запуск
+.env.local
 
 /generated/prisma
+# Local sqlite artifacts
+prisma/*.db
+*.sqlite
