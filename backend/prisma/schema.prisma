@@ -28,6 +28,17 @@ enum VerificationStatus {
   REJECTED
 }
 
+enum ServiceCategory {
+  CERTIFICATION
+  SUPPORT
+  CONSULTING
+}
+
+enum CertificationKind {
+  MANDATORY
+  VOLUNTARY
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -104,6 +115,8 @@ model Service {
   internalCode String
   title        String
   description  String
+  category     ServiceCategory
+  certificationKind CertificationKind?
   priceFrom    Int?
   etaDaysFrom  Int?
   imageUrl     String?

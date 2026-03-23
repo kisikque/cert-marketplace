@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
+  await prisma.serviceReview.deleteMany();
   await prisma.serviceTag.deleteMany();
   await prisma.tag.deleteMany();
   await prisma.orderDocument.deleteMany();
@@ -86,6 +87,8 @@ async function main() {
         internalCode: "DECL-TRTS",
         title: "Декларация соответствия ТР ТС",
         description: "Подготовка и регистрация декларации соответствия требованиям техрегламентов ЕАЭС.",
+        category: "CERTIFICATION",
+        certificationKind: "MANDATORY",
         priceFrom: 15000,
         etaDaysFrom: 5
       },
@@ -94,6 +97,8 @@ async function main() {
         internalCode: "CERT-TRTS",
         title: "Сертификат соответствия ТР ТС",
         description: "Оформление сертификата соответствия. Консультации, подготовка комплекта документов.",
+        category: "CERTIFICATION",
+        certificationKind: "MANDATORY",
         priceFrom: 25000,
         etaDaysFrom: 10
       },
@@ -102,6 +107,7 @@ async function main() {
         internalCode: "ISO-9001",
         title: "Сертификация ISO 9001",
         description: "Сертификация системы менеджмента качества ISO 9001 для организаций.",
+        category: "CONSULTING",
         priceFrom: 60000,
         etaDaysFrom: 20
       },
@@ -110,8 +116,28 @@ async function main() {
         internalCode: "GOST-R",
         title: "Добровольная сертификация ГОСТ Р",
         description: "Оформление добровольного сертификата ГОСТ Р для продукции и услуг.",
+        category: "CERTIFICATION",
+        certificationKind: "VOLUNTARY",
         priceFrom: 18000,
         etaDaysFrom: 7
+      },
+      {
+        providerId: provider2.id,
+        internalCode: "OUTSOURCE-CERT",
+        title: "Сопровождение сертификационного проекта",
+        description: "Берём на себя коммуникацию, сбор документов и сопровождение до выпуска итогового комплекта.",
+        category: "SUPPORT",
+        priceFrom: 18000,
+        etaDaysFrom: 7
+      },
+      {
+        providerId: provider2.id,
+        internalCode: "CONSULT-START",
+        title: "Консультация по выходу на маркетплейсы",
+        description: "Разбор обязательных требований, документов и дорожной карты перед запуском продаж.",
+        category: "CONSULTING",
+        priceFrom: 9000,
+        etaDaysFrom: 3
       }
     ]
   });

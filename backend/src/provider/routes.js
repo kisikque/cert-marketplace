@@ -64,6 +64,15 @@ function normalizeWebsite(value) {
   return `https://${normalized}`;
 }
 
+function normalizeCategory(category) {
+  return ["CERTIFICATION", "SUPPORT", "CONSULTING"].includes(category) ? category : null;
+}
+
+function normalizeCertificationKind(category, certificationKind) {
+  if (category !== "CERTIFICATION") return null;
+  return ["MANDATORY", "VOLUNTARY"].includes(certificationKind) ? certificationKind : null;
+}
+
 async function getProviderProfile(userId) {
   return prisma.providerProfile.findUnique({ where: { userId } });
 }
@@ -272,10 +281,12 @@ providerRouter.post("/services", requireAuth, requireRole(["PROVIDER"]), async (
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
 
-  const { internalCode, title, description, priceFrom, etaDaysFrom, imageUrl, isActive } = req.body ?? {};
+  const { internalCode, title, description, category, certificationKind, priceFrom, etaDaysFrom, imageUrl, isActive } = req.body ?? {};
   if (!internalCode || !title || !description) {
     return res.status(400).json({ error: "internalCode/title/description required" });
   }
+  const normalizedCategory = normalizeCategory(category);
+  if (!normalizedCategory) return res.status(400).json({ error: "VALID_CATEGORY_REQUIRED" });
 
   try {
     const service = await prisma.service.create({
@@ -284,6 +295,8 @@ providerRouter.post("/services", requireAuth, requireRole(["PROVIDER"]), async (
         internalCode,
         title,
         description,
+        category: normalizedCategory,
+        certificationKind: normalizeCertificationKind(normalizedCategory, certificationKind),
         priceFrom: priceFrom == null ? null : Number(priceFrom),
         etaDaysFrom: etaDaysFrom == null ? null : Number(etaDaysFrom),
         imageUrl: imageUrl || null,
@@ -318,11 +331,20 @@ providerRouter.patch("/services/:id", requireAuth, requireRole(["PROVIDER"]), as
   if (patch.isActive === true && !canPublishServices(pp)) {
     return res.status(403).json({ error: "PROVIDER_NOT_VERIFIED" });
   }
+  const normalizedCategory = patch.category !== undefined ? normalizeCategory(patch.category) : undefined;
+  if (patch.category !== undefined && !normalizedCategory) {
+    return res.status(400).json({ error: "VALID_CATEGORY_REQUIRED" });
+  }
+  const nextCategory = normalizedCategory ?? existing.category;
 
   const data = {
     ...(patch.internalCode != null ? { internalCode: patch.internalCode } : {}),
     ...(patch.title != null ? { title: patch.title } : {}),
     ...(patch.description != null ? { description: patch.description } : {}),
+    ...(normalizedCategory !== undefined ? { category: normalizedCategory } : {}),
+    ...(patch.category !== undefined || patch.certificationKind !== undefined
+      ? { certificationKind: normalizeCertificationKind(nextCategory, patch.certificationKind) }
+      : {}),
     ...(patch.priceFrom !== undefined ? { priceFrom: patch.priceFrom === null ? null : Number(patch.priceFrom) } : {}),
     ...(patch.etaDaysFrom !== undefined ? { etaDaysFrom: patch.etaDaysFrom === null ? null : Number(patch.etaDaysFrom) } : {}),
     ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl ? String(patch.imageUrl) : null } : {}),
