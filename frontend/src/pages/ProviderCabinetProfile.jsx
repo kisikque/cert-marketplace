@@ -11,10 +11,9 @@ import OrderDetails from "./pages/OrderDetails";
 import ProviderOrders from "./pages/ProviderOrders";
 import ProviderOrderDetails from "./pages/ProviderOrderDetails";
 import ProviderServices from "./pages/ProviderServices";
+import ProviderCabinetProfile from "./pages/ProviderCabinetProfile";
 import ProviderProfile from "./pages/ProviderProfile";
 import AdminPanel from "./pages/AdminPanel";
-import ServiceCategoryPage from "./pages/ServiceCategoryPage";
-import MyProducts from "./pages/MyProducts";
 
 function RoleBadge({ role }) {
   const style = {
@@ -50,9 +49,6 @@ export default function App() {
               Cert Marketplace
             </Link>
             <Link to="/">Витрина</Link>
-            <Link to="/services/certification">Сертификация</Link>
-            <Link to="/services/support">Сопровождение</Link>
-            <Link to="/services/consulting">Консультации</Link>
             <Link to="/cart">Корзина</Link>
           </div>
 
@@ -66,7 +62,6 @@ export default function App() {
 
                 {user.role === "CUSTOMER" && (
                   <>
-                    <Link to="/products">Мои продукты</Link>
                     <Link to="/orders">Мои заявки</Link>
                     <Link to="/cart">Корзина</Link>
                   </>
@@ -75,6 +70,7 @@ export default function App() {
                 {user.role === "PROVIDER" && (
                   <>
                     <Link to="/provider/orders">Кабинет заявок</Link>
+                    <Link to="/provider/profile">Профиль провайдера</Link>
                     <Link to="/provider/services">Мои услуги</Link>
                   </>
                 )}
@@ -95,16 +91,15 @@ export default function App() {
         <main style={{ padding: 12 }}>
           <Routes>
             <Route path="/" element={<Home />} />
-            <Route path="/services/:slug" element={<ServiceCategoryPage />} />
             <Route path="/providers/:slug" element={<ProviderProfile />} />
             <Route path="/login" element={user ? <Navigate to="/" /> : <Login onLogin={refresh} />} />
             <Route path="/register" element={user ? <Navigate to="/" /> : <Register onLogin={refresh} />} />
             <Route path="/cart" element={<CartPage />} />
-            <Route path="/products" element={<MyProducts />} />
             <Route path="/orders" element={<MyOrders />} />
             <Route path="/orders/:id" element={<OrderDetails />} />
             <Route path="/provider/orders" element={<ProviderOrders />} />
             <Route path="/provider/orders/:id" element={<ProviderOrderDetails />} />
+            <Route path="/provider/profile" element={user?.role === "PROVIDER" ? <ProviderCabinetProfile /> : <Navigate to="/" />}/>
             <Route path="/provider/services" element={<ProviderServices />} />
             <Route path="/admin" element={<AdminPanel />} />
             <Route path="*" element={<Navigate to="/" />} />

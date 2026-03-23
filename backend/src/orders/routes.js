@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { requireAuth, requireRole } from "../auth/middleware.js";
+import { issueCertificatesForOrder, normalizeClientProductPayload, normalizeCustomerProfilePayload } from "../lib/customerData.js";
 
 export const ordersRouter = Router();
 
@@ -36,16 +37,124 @@ async function recalculateRatings(serviceId, providerId) {
   ]);
 }
 
-// CUSTOMER: создать заявку из корзины
+function mapOrder(order) {
+  return {
+    id: order.id,
+    status: order.status,
+    customerComment: order.customerComment,
+    providerComment: order.providerComment,
+    createdAt: order.createdAt,
+    providerNeedsAttention: order.providerNeedsAttention,
+    lastCustomerDataChangeAt: order.lastCustomerDataChangeAt,
+    lastCustomerDataChangeType: order.lastCustomerDataChangeType,
+    provider: order.provider
+      ? { id: order.provider.id, orgName: order.provider.orgName, phone: order.provider.phone }
+      : null,
+    customer: order.customer
+      ? { id: order.customer.id, email: order.customer.email, displayName: order.customer.displayName }
+      : null,
+    customerProfile: order.customerProfile,
+    clientProduct: order.clientProduct
+      ? {
+          ...order.clientProduct,
+          documents: (order.clientProduct.documents || []).map((d) => ({
+            id: d.id,
+            fileName: d.fileName,
+            size: d.size,
+            mimeType: d.mimeType,
+            createdAt: d.createdAt
+          })),
+          certificates: (order.clientProduct.certificates || []).map((certificate) => ({
+            id: certificate.id,
+            title: certificate.title,
+            certNumber: certificate.certNumber,
+            status: certificate.status,
+            issuedAt: certificate.issuedAt,
+            orderId: certificate.orderId
+          }))
+        }
+      : null,
+    items: order.items.map((it) => ({
+      serviceId: it.serviceId,
+      orderItemId: it.id,
+      title: it.service.title,
+      qty: it.qty,
+      priceAtPurchase: it.priceAtPurchase,
+      review: it.review
+        ? {
+            id: it.review.id,
+            rating: it.review.rating,
+            text: it.review.text,
+            isAnonymous: it.review.isAnonymous,
+            displayUserId: it.review.displayUserId,
+            createdAt: it.review.createdAt,
+            updatedAt: it.review.updatedAt
+          }
+        : null
+    })),
+    statusHistory: order.statusHistory.map((h) => ({
+      fromStatus: h.fromStatus,
+      toStatus: h.toStatus,
+      comment: h.comment,
+      createdAt: h.createdAt
+    })),
+    eventLogs: (order.eventLogs || []).map((event) => ({
+      id: event.id,
+      type: event.type,
+      message: event.message,
+      field: event.field,
+      oldValue: event.oldValue,
+      newValue: event.newValue,
+      createdAt: event.createdAt
+    })),
+    documents: order.documents.map((d) => ({
+      id: d.id,
+      fileName: d.fileName,
+      mimeType: d.mimeType,
+      size: d.size,
+      createdAt: d.createdAt,
+      uploadedByUserId: d.uploadedByUserId
+    }))
+  };
+}
+
+async function getCustomerProfile(userId) {
+  return prisma.customerProfile.findUnique({ where: { userId } });
+}
+
+async function getOrderForCustomer(orderId, userId) {
+  return prisma.order.findFirst({
+    where: { id: orderId, customerId: userId },
+    include: {
+      provider: { select: { id: true, orgName: true, phone: true } },
+      customer: { select: { id: true, email: true, displayName: true } },
+      customerProfile: true,
+      clientProduct: { include: { documents: { orderBy: { createdAt: "desc" } }, certificates: { orderBy: { issuedAt: "desc" } } } },
+      items: { include: { service: true, review: true } },
+      statusHistory: { orderBy: { createdAt: "asc" } },
+      eventLogs: { orderBy: { createdAt: "desc" } },
+      documents: { orderBy: { createdAt: "desc" } }
+    }
+  });
+}
+
 ordersRouter.post("/", requireAuth, requireRole(["CUSTOMER"]), async (req, res) => {
   const userId = req.session.user.id;
-  const { items, customerComment } = req.body ?? {};
+  const { items, customerComment, clientProductId } = req.body ?? {};
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "items required" });
   }
+  if (!clientProductId) return res.status(400).json({ error: "CLIENT_PRODUCT_REQUIRED" });
 
-  // items: [{ serviceId, qty }]
+  const customerProfile = await getCustomerProfile(userId);
+  if (!customerProfile) return res.status(400).json({ error: "NO_CUSTOMER_PROFILE" });
+
+  const clientProduct = await prisma.clientProduct.findFirst({
+    where: { id: clientProductId, customerProfileId: customerProfile.id }
+  });
+  if (!clientProduct) return res.status(400).json({ error: "CLIENT_PRODUCT_NOT_FOUND" });
+
   const serviceIds = items.map((x) => x.serviceId);
   const services = await prisma.service.findMany({
     where: { id: { in: serviceIds }, isActive: true },
@@ -56,7 +165,6 @@ ordersRouter.post("/", requireAuth, requireRole(["CUSTOMER"]), async (req, res) 
     return res.status(400).json({ error: "some services not found" });
   }
 
-  // правило: один провайдер
   const providerId = services[0].providerId;
   if (!services.every((s) => s.providerId === providerId)) {
     return res.status(400).json({ error: "services must belong to one provider" });
@@ -73,6 +181,8 @@ ordersRouter.post("/", requireAuth, requireRole(["CUSTOMER"]), async (req, res) 
     data: {
       customerId: userId,
       providerId,
+      customerProfileId: customerProfile.id,
+      clientProductId: clientProduct.id,
       status: "NEW",
       customerComment: customerComment || null,
       items: { create: normalizedItems },
@@ -81,20 +191,15 @@ ordersRouter.post("/", requireAuth, requireRole(["CUSTOMER"]), async (req, res) 
           changedByUserId: userId,
           fromStatus: null,
           toStatus: "NEW",
-          comment: "Создана заявка"
+          comment: `Создана заявка по продукту «${clientProduct.title}»`
         }
       }
-    },
-    include: {
-      items: { include: { service: true } },
-      provider: true
     }
   });
 
   res.json({ orderId: order.id });
 });
 
-// CUSTOMER: список своих заявок
 ordersRouter.get("/", requireAuth, requireRole(["CUSTOMER"]), async (req, res) => {
   const userId = req.session.user.id;
 
@@ -102,6 +207,7 @@ ordersRouter.get("/", requireAuth, requireRole(["CUSTOMER"]), async (req, res) =
     where: { customerId: userId },
     include: {
       provider: { select: { id: true, orgName: true } },
+      clientProduct: { select: { id: true, title: true, kind: true } },
       items: { include: { service: true } }
     },
     orderBy: { createdAt: "desc" }
@@ -113,6 +219,8 @@ ordersRouter.get("/", requireAuth, requireRole(["CUSTOMER"]), async (req, res) =
       status: o.status,
       createdAt: o.createdAt,
       providerName: o.provider.orgName,
+      clientProduct: o.clientProduct,
+      providerNeedsAttention: o.providerNeedsAttention,
       items: o.items.map((it) => ({
         serviceTitle: it.service.title,
         qty: it.qty,
@@ -122,65 +230,81 @@ ordersRouter.get("/", requireAuth, requireRole(["CUSTOMER"]), async (req, res) =
   });
 });
 
-// CUSTOMER: одна заявка (детали)
 ordersRouter.get("/:id", requireAuth, requireRole(["CUSTOMER"]), async (req, res) => {
-  const userId = req.session.user.id;
-  const id = req.params.id;
-
-  const order = await prisma.order.findFirst({
-    where: { id, customerId: userId },
-    include: {
-      provider: { select: { id: true, orgName: true, phone: true } },
-      items: { include: { service: true, review: true } },
-      statusHistory: { orderBy: { createdAt: "asc" } },
-      documents: { orderBy: { createdAt: "desc" } }
-    }
-  });
-
+  const order = await getOrderForCustomer(req.params.id, req.session.user.id);
   if (!order) return res.status(404).json({ error: "not found" });
+  res.json({ order: mapOrder(order) });
+});
 
-  res.json({
-    order: {
-      id: order.id,
-      status: order.status,
-      customerComment: order.customerComment,
-      providerComment: order.providerComment,
-      createdAt: order.createdAt,
-      provider: order.provider,
-      items: order.items.map((it) => ({
-        serviceId: it.serviceId,
-        orderItemId: it.id,
-        title: it.service.title,
-        qty: it.qty,
-        priceAtPurchase: it.priceAtPurchase,
-        review: it.review
-          ? {
-              id: it.review.id,
-              rating: it.review.rating,
-              text: it.review.text,
-              isAnonymous: it.review.isAnonymous,
-              displayUserId: it.review.displayUserId,
-              createdAt: it.review.createdAt,
-              updatedAt: it.review.updatedAt
-            }
-          : null
-      })),
-      statusHistory: order.statusHistory.map((h) => ({
-        fromStatus: h.fromStatus,
-        toStatus: h.toStatus,
-        comment: h.comment,
-        createdAt: h.createdAt
-      })),
-      documents: order.documents.map((d) => ({
-        id: d.id,
-        fileName: d.fileName,
-        mimeType: d.mimeType,
-        size: d.size,
-        createdAt: d.createdAt,
-        uploadedByUserId: d.uploadedByUserId
-      }))
-    }
-  });
+ordersRouter.patch("/:id/profile", requireAuth, requireRole(["CUSTOMER"]), async (req, res) => {
+  const order = await getOrderForCustomer(req.params.id, req.session.user.id);
+  if (!order) return res.status(404).json({ error: "NOT_FOUND" });
+  if (!order.customerProfile) return res.status(400).json({ error: "NO_CUSTOMER_PROFILE" });
+
+  try {
+    const normalized = normalizeCustomerProfilePayload({ ...order.customerProfile, ...(req.body ?? {}) }, order.customerProfile.accountKind);
+    await prisma.customerProfile.update({
+      where: { id: order.customerProfile.id },
+      data: normalized
+    });
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        providerNeedsAttention: true,
+        lastCustomerDataChangeAt: new Date(),
+        lastCustomerDataChangeType: "PROFILE_UPDATED"
+      }
+    });
+    await prisma.orderEventLog.create({
+      data: {
+        orderId: order.id,
+        changedByUserId: req.session.user.id,
+        type: "PROFILE_UPDATED",
+        message: "Пользователь изменил данные профиля из карточки заявки",
+        field: "Профиль",
+        oldValue: null,
+        newValue: "Данные обновлены"
+      }
+    });
+    const refreshed = await getOrderForCustomer(req.params.id, req.session.user.id);
+    res.json({ order: mapOrder(refreshed) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "INVALID_PROFILE" });
+  }
+});
+
+ordersRouter.patch("/:id/product", requireAuth, requireRole(["CUSTOMER"]), async (req, res) => {
+  const order = await getOrderForCustomer(req.params.id, req.session.user.id);
+  if (!order) return res.status(404).json({ error: "NOT_FOUND" });
+  if (!order.clientProduct) return res.status(400).json({ error: "NO_PRODUCT" });
+
+  try {
+    const normalized = normalizeClientProductPayload({ ...order.clientProduct, ...(req.body ?? {}) });
+    await prisma.clientProduct.update({ where: { id: order.clientProduct.id }, data: normalized });
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        providerNeedsAttention: true,
+        lastCustomerDataChangeAt: new Date(),
+        lastCustomerDataChangeType: "PRODUCT_UPDATED"
+      }
+    });
+    await prisma.orderEventLog.create({
+      data: {
+        orderId: order.id,
+        changedByUserId: req.session.user.id,
+        type: "PRODUCT_UPDATED",
+        message: "Пользователь изменил данные товара/услуги из карточки заявки",
+        field: "Продукт",
+        oldValue: null,
+        newValue: "Данные обновлены"
+      }
+    });
+    const refreshed = await getOrderForCustomer(req.params.id, req.session.user.id);
+    res.json({ order: mapOrder(refreshed) });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "INVALID_PRODUCT" });
+  }
 });
 
 ordersRouter.post("/:id/items/:itemId/review", requireAuth, requireRole(["CUSTOMER"]), async (req, res) => {
@@ -242,3 +366,9 @@ ordersRouter.patch("/:id/items/:itemId/review", requireAuth, requireRole(["CUSTO
   await recalculateRatings(review.serviceId, review.providerId);
   res.json({ review: updated });
 });
+
+export async function handleProviderOrderStatusSideEffects(orderId, toStatus, changedByUserId) {
+  if (toStatus === "DONE") {
+    await issueCertificatesForOrder(orderId, changedByUserId);
+  }
+}

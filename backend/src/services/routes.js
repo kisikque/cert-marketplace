@@ -7,10 +7,14 @@ servicesRouter.get("/", async (req, res) => {
   const search = (req.query.search || "").toString().trim();
   const tag = (req.query.tag || "").toString().trim();
   const providerId = (req.query.provider || "").toString().trim();
+  const category = (req.query.category || "").toString().trim();
+  const certificationKind = (req.query.certificationKind || "").toString().trim();
 
   const where = {
     isActive: true,
     ...(providerId ? { providerId } : {}),
+    ...(category ? { category } : {}),
+    ...(certificationKind ? { certificationKind } : {}),
     ...(search
       ? {
           OR: [
@@ -56,6 +60,8 @@ servicesRouter.get("/", async (req, res) => {
       internalCode: s.internalCode,
       title: s.title,
       description: s.description,
+      category: s.category,
+      certificationKind: s.certificationKind,
       priceFrom: s.priceFrom,
       etaDaysFrom: s.etaDaysFrom,
       imageUrl: s.imageUrl,
@@ -98,6 +104,8 @@ servicesRouter.get("/:id", async (req, res) => {
       internalCode: service.internalCode,
       title: service.title,
       description: service.description,
+      category: service.category,
+      certificationKind: service.certificationKind,
       priceFrom: service.priceFrom,
       etaDaysFrom: service.etaDaysFrom,
       imageUrl: service.imageUrl,
