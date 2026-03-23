@@ -4,7 +4,6 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
-  // очистка (SQLite позволяет, но аккуратно)
   await prisma.serviceTag.deleteMany();
   await prisma.tag.deleteMany();
   await prisma.orderDocument.deleteMany();
@@ -12,6 +11,7 @@ async function main() {
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
   await prisma.service.deleteMany();
+  await prisma.providerVerificationDocument.deleteMany();
   await prisma.providerProfile.deleteMany();
   await prisma.user.deleteMany();
 
@@ -19,7 +19,7 @@ async function main() {
   const providerPass = await bcrypt.hash("Provider123!", 10);
   const customerPass = await bcrypt.hash("Customer123!", 10);
 
-  const admin = await prisma.user.create({
+  await prisma.user.create({
     data: { email: "admin@demo.ru", passwordHash: adminPass, role: "ADMIN", displayName: "Admin" }
   });
 
@@ -27,7 +27,7 @@ async function main() {
     data: { email: "provider@demo.ru", passwordHash: providerPass, role: "PROVIDER", displayName: "Provider" }
   });
 
-  const customer = await prisma.user.create({
+  await prisma.user.create({
     data: { email: "customer@demo.ru", passwordHash: customerPass, role: "CUSTOMER", displayName: "Customer" }
   });
 
@@ -37,25 +37,37 @@ async function main() {
       orgName: 'ООО "СертЛаб"',
       inn: "7700000000",
       phone: "+7 (900) 000-00-00",
-      address: "Москва"
+      address: "Москва",
+      website: "https://sertlab.example.com",
+      description: "Центр сертификации с фокусом на ЕАЭС и добровольные программы подтверждения соответствия.",
+      publicSlug: "sertlab",
+      verificationStatus: "APPROVED",
+      submittedAt: new Date(),
+      verifiedAt: new Date()
     }
   });
 
   const providerUser2 = await prisma.user.create({
-  data: { email: "provider2@demo.ru", passwordHash: providerPass, role: "PROVIDER", displayName: "Provider 2" }
-});
+    data: { email: "provider2@demo.ru", passwordHash: providerPass, role: "PROVIDER", displayName: "Provider 2" }
+  });
 
-const provider2 = await prisma.providerProfile.create({
-  data: {
-    userId: providerUser2.id,
-    orgName: 'АО "СертЭксперт"',
-    inn: "7800000000",
-    phone: "+7 (901) 111-11-11",
-    address: "Санкт-Петербург"
-  }
-});
+  const provider2 = await prisma.providerProfile.create({
+    data: {
+      userId: providerUser2.id,
+      orgName: 'АО "СертЭксперт"',
+      inn: "7800000000",
+      phone: "+7 (901) 111-11-11",
+      address: "Санкт-Петербург",
+      website: "https://sertexpert.example.com",
+      description: "Провайдер услуг добровольной сертификации, сопровождения и консультаций для бизнеса.",
+      publicSlug: "sertexpert",
+      verificationStatus: "APPROVED",
+      submittedAt: new Date(),
+      verifiedAt: new Date()
+    }
+  });
 
-  const tags = await prisma.tag.createMany({
+  await prisma.tag.createMany({
     data: [
       { name: "Срочно", slug: "urgent" },
       { name: "ЕАЭС", slug: "eaeu" },
@@ -67,7 +79,7 @@ const provider2 = await prisma.providerProfile.create({
 
   const allTags = await prisma.tag.findMany();
 
-  const services = await prisma.service.createMany({
+  await prisma.service.createMany({
     data: [
       {
         providerId: provider.id,
@@ -94,19 +106,17 @@ const provider2 = await prisma.providerProfile.create({
         etaDaysFrom: 20
       },
       {
-      providerId: provider2.id,
-      internalCode: "GOST-R",
-      title: "Добровольная сертификация ГОСТ Р",
-      description: "Оформление добровольного сертификата ГОСТ Р для продукции и услуг.",
-      priceFrom: 18000,
-      etaDaysFrom: 7
+        providerId: provider2.id,
+        internalCode: "GOST-R",
+        title: "Добровольная сертификация ГОСТ Р",
+        description: "Оформление добровольного сертификата ГОСТ Р для продукции и услуг.",
+        priceFrom: 18000,
+        etaDaysFrom: 7
       }
     ]
   });
 
   const createdServices = await prisma.service.findMany();
-
-  // привязка тегов к услугам
   const bySlug = (slug) => allTags.find((t) => t.slug === slug)?.id;
 
   await prisma.serviceTag.createMany({

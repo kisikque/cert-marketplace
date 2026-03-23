@@ -1,29 +1,60 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch } from "../api";
+import { Link, useNavigate } from "react-router-dom";
+import { apiFetch, apiUpload } from "../api";
 import { useAuthContext } from "../AuthContext";
-import { useNavigate } from "react-router-dom";
+
+const PROVIDER_DOCUMENT_TYPES = [
+  { value: "REGISTRATION_DOC", label: "Регистрационный документ" },
+  { value: "TAX_DOC", label: "ИНН / налоговый документ" },
+  { value: "OTHER", label: "Другой документ" }
+];
+
+const API_BASE = "http://localhost:3001";
+
+const PROVIDER_DOCUMENT_TYPES = [
+  { value: "REGISTRATION_DOC", label: "Регистрационный документ" },
+  { value: "TAX_DOC", label: "ИНН / налоговый документ" },
+  { value: "OTHER", label: "Другой документ" }
+];
 
 function getServiceTagIds(service) {
-  // service.tags = [{ tag: {...}}] (после include на бэке)
   return (service.tags || []).map((x) => x.tag?.id).filter(Boolean);
 }
 
 export default function ProviderServices() {
-  const { user } = useAuthContext();
+  const { user, refresh } = useAuthContext();
   const nav = useNavigate();
 
   const [services, setServices] = useState([]);
   const [allTags, setAllTags] = useState([]);
-  const [error, setError] = useState(null);
+  const [verificationDocuments, setVerificationDocuments] = useState([]);
+  const [verificationMeta, setVerificationMeta] = useState(null);
+  const [profile, setProfile] = useState(null);
 
-  // форма создания
+  const [verificationDocType, setVerificationDocType] = useState(PROVIDER_DOCUMENT_TYPES[0].value);
+  const [verificationFile, setVerificationFile] = useState(null);
+  const [logoFile, setLogoFile] = useState(null);
+  const [uploadingVerificationDoc, setUploadingVerificationDoc] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [error, setError] = useState(null);
+  const [uploadingVerificationDoc, setUploadingVerificationDoc] = useState(false);
+
   const [internalCode, setInternalCode] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priceFrom, setPriceFrom] = useState("");
   const [etaDaysFrom, setEtaDaysFrom] = useState("");
 
-  // UI тегов: какой сервис сейчас “редактируем”
+  const [profileForm, setProfileForm] = useState({
+    orgName: "",
+    inn: "",
+    description: "",
+    website: "",
+    phone: "",
+    address: ""
+  });
+
   const [tagEditorId, setTagEditorId] = useState(null);
   const [selectedTagIds, setSelectedTagIds] = useState([]);
   const [savingTags, setSavingTags] = useState(false);
@@ -35,12 +66,26 @@ export default function ProviderServices() {
   async function load() {
     setError(null);
     try {
-      const [s, t] = await Promise.all([
+      const [servicesData, tagsData, verificationData, profileData] = await Promise.all([
         apiFetch("/provider/services"),
-        apiFetch("/provider/tags")
+        apiFetch("/provider/tags"),
+        apiFetch("/provider-verification-docs/me"),
+        apiFetch("/provider/profile")
       ]);
-      setServices(s.services || []);
-      setAllTags(t.tags || []);
+
+      setServices(servicesData.services || []);
+      setAllTags(tagsData.tags || []);
+      setVerificationDocuments(verificationData.documents || []);
+      setVerificationMeta(verificationData.providerProfile || null);
+      setProfile(profileData.profile || null);
+      setProfileForm({
+        orgName: profileData.profile?.orgName || "",
+        inn: profileData.profile?.inn || "",
+        description: profileData.profile?.description || "",
+        website: profileData.profile?.website || "",
+        phone: profileData.profile?.phone || "",
+        address: profileData.profile?.address || ""
+      });
     } catch (e) {
       setError(e?.error || "Не удалось загрузить данные");
     }
@@ -75,12 +120,16 @@ export default function ProviderServices() {
     }
   }
 
-  async function toggleActive(s) {
-    await apiFetch(`/provider/services/${s.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ isActive: !s.isActive })
-    });
-    await load();
+  async function toggleActive(service) {
+    try {
+      await apiFetch(`/provider/services/${service.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive: !service.isActive })
+      });
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось изменить статус услуги");
+    }
   }
 
   async function softDelete(id) {
@@ -88,7 +137,6 @@ export default function ProviderServices() {
     await load();
   }
 
-  // --- Теги ---
   const currentService = useMemo(
     () => services.find((x) => x.id === tagEditorId) || null,
     [services, tagEditorId]
@@ -124,17 +172,225 @@ export default function ProviderServices() {
     }
   }
 
+  async function uploadVerificationDocument(e) {
+    e.preventDefault();
+    if (!verificationFile) {
+      setError("Выберите файл для верификации");
+      return;
+    }
+
+    setUploadingVerificationDoc(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", verificationFile);
+      fd.append("documentType", verificationDocType);
+      await apiUpload("/provider-verification-docs", fd);
+      setVerificationFile(null);
+      await refresh?.();
+      await load();
+    } catch (e2) {
+      setError(e2?.error || "Не удалось загрузить документ верификации");
+    } finally {
+      setUploadingVerificationDoc(false);
+    }
+  }
+
+  async function removeVerificationDocument(id) {
+    try {
+      await apiFetch(`/provider-verification-docs/${id}`, { method: "DELETE" });
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось удалить документ");
+    }
+  }
+
+  async function saveProfile(e) {
+    e.preventDefault();
+    setSavingProfile(true);
+    setError(null);
+    try {
+      await apiFetch("/provider/profile", {
+        method: "PATCH",
+        body: JSON.stringify(profileForm)
+      });
+      await refresh?.();
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось сохранить профиль провайдера");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function uploadLogo(e) {
+    e.preventDefault();
+    if (!logoFile) {
+      setError("Выберите логотип");
+      return;
+    }
+
+    setUploadingLogo(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", logoFile);
+      await apiUpload("/provider/profile/logo", fd);
+      setLogoFile(null);
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось загрузить логотип");
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
+  async function removeLogo() {
+    try {
+      await apiFetch("/provider/profile/logo", { method: "DELETE" });
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось удалить логотип");
+    }
+  }
+
   if (!user || user.role !== "PROVIDER") return null;
 
   return (
-    <div style={{ maxWidth: 900 }}>
+    <div style={{ maxWidth: 980 }}>
       <h2>Мои услуги</h2>
       {error && <p style={{ color: "crimson" }}>{String(error)}</p>}
 
-      <form
-        onSubmit={createService}
-        style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}
-      >
+      {profile && (
+        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14, marginBottom: 16, display: "grid", gap: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Публичный профиль провайдера</h3>
+              <div style={{ fontSize: 13, opacity: 0.75 }}>
+                Заполните данные компании, которые увидит покупатель на вашей публичной странице.
+              </div>
+            </div>
+            {profile.publicSlug && verificationMeta?.verificationStatus === "APPROVED" && (
+              <Link to={`/providers/${profile.publicSlug}`} target="_blank" rel="noreferrer">
+                Открыть публичный профиль
+              </Link>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ width: 120, display: "grid", gap: 10 }}>
+              <div
+                style={{
+                  width: 120,
+                  height: 120,
+                  borderRadius: 24,
+                  overflow: "hidden",
+                  border: "1px solid #ddd",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "#fafafa"
+                }}
+              >
+                {profile.logoUrl ? (
+                  <img src={`${API_BASE}${profile.logoUrl}`} alt={profile.orgName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span style={{ fontSize: 32, opacity: 0.35 }}>{profile.orgName?.slice(0, 1) || "P"}</span>
+                )}
+              </div>
+              <form onSubmit={uploadLogo} style={{ display: "grid", gap: 8 }}>
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
+                <button type="submit" disabled={uploadingLogo}>{uploadingLogo ? "Загрузка..." : "Загрузить логотип"}</button>
+              </form>
+              {profile.logoUrl && <button onClick={removeLogo}>Удалить логотип</button>}
+              <div style={{ fontSize: 12, opacity: 0.7 }}>PNG/JPG/WEBP, до 2 MB. Рекомендуемый размер 400×400 px.</div>
+            </div>
+
+            <form onSubmit={saveProfile} style={{ flex: 1, display: "grid", gap: 8, minWidth: 280 }}>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Название компании</span>
+                <input value={profileForm.orgName} onChange={(e) => setProfileForm((prev) => ({ ...prev, orgName: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>ИНН</span>
+                <input value={profileForm.inn} onChange={(e) => setProfileForm((prev) => ({ ...prev, inn: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Описание</span>
+                <textarea rows={4} value={profileForm.description} onChange={(e) => setProfileForm((prev) => ({ ...prev, description: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Сайт</span>
+                <input value={profileForm.website} onChange={(e) => setProfileForm((prev) => ({ ...prev, website: e.target.value }))} placeholder="https://example.com" />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Телефон</span>
+                <input value={profileForm.phone} onChange={(e) => setProfileForm((prev) => ({ ...prev, phone: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Адрес</span>
+                <input value={profileForm.address} onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))} />
+              </label>
+              <button type="submit" disabled={savingProfile}>{savingProfile ? "Сохраняем..." : "Сохранить профиль"}</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {verificationMeta && (
+        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14, marginBottom: 16, display: "grid", gap: 10 }}>
+          <div>
+            <strong>Статус верификации:</strong> {verificationMeta.verificationStatus}
+          </div>
+          {user.providerVerificationComment && (
+            <div>
+              <strong>Комментарий администратора:</strong> {user.providerVerificationComment}
+            </div>
+          )}
+          {verificationMeta.verificationStatus !== "APPROVED" && (
+            <div style={{ fontSize: 14 }}>
+              Пока верификация не подтверждена, новые услуги будут создаваться неактивными и публичный профиль будет скрыт от покупателей.
+            </div>
+          )}
+
+          <form onSubmit={uploadVerificationDocument} style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontWeight: 700 }}>Документы компании</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <select value={verificationDocType} onChange={(e) => setVerificationDocType(e.target.value)}>
+                {PROVIDER_DOCUMENT_TYPES.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
+              </select>
+              <input type="file" onChange={(e) => setVerificationFile(e.target.files?.[0] || null)} />
+              <button type="submit" disabled={uploadingVerificationDoc}>
+                {uploadingVerificationDoc ? "Загрузка..." : "Добавить документ"}
+              </button>
+            </div>
+          </form>
+
+          {verificationDocuments.length === 0 ? (
+            <div>Документы для проверки пока не загружены.</div>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {verificationDocuments.map((doc) => (
+                <li key={doc.id} style={{ marginBottom: 8 }}>
+                  <a href={`http://localhost:3001/api/provider-verification-docs/${doc.id}/download`} target="_blank" rel="noreferrer">
+                    {doc.fileName}
+                  </a>{" "}
+                  <span style={{ fontSize: 13, opacity: 0.75 }}>
+                    ({doc.documentType || "без типа"}, {Math.round(doc.size / 1024)} KB)
+                  </span>
+                  <button type="button" style={{ marginLeft: 8 }} onClick={() => removeVerificationDocument(doc.id)}>
+                    Удалить
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <form onSubmit={createService} style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
         <h3>Создать услугу</h3>
         <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr" }}>
           <label>Код</label>
@@ -157,7 +413,6 @@ export default function ProviderServices() {
         </button>
       </form>
 
-      {/* Редактор тегов (минимальный блок) */}
       {currentService && (
         <div style={{ marginTop: 16, border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
@@ -166,7 +421,7 @@ export default function ProviderServices() {
               <div style={{ fontWeight: 700 }}>{currentService.title}</div>
               <div style={{ marginTop: 8 }}>Теги:</div>
             </div>
-            <button onClick={() => setTagEditorId(null)}>Закрыть</button>
+            <button type="button" onClick={() => setTagEditorId(null)}>Закрыть</button>
           </div>
 
           {allTags.length === 0 ? (
@@ -185,11 +440,7 @@ export default function ProviderServices() {
                     alignItems: "center"
                   }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={selectedTagIds.includes(t.id)}
-                    onChange={() => toggleTag(t.id)}
-                  />
+                  <input type="checkbox" checked={selectedTagIds.includes(t.id)} onChange={() => toggleTag(t.id)} />
                   {t.name}
                 </label>
               ))}
@@ -197,7 +448,7 @@ export default function ProviderServices() {
           )}
 
           <div style={{ marginTop: 12 }}>
-            <button disabled={savingTags} onClick={saveTags}>
+            <button type="button" disabled={savingTags} onClick={saveTags}>
               {savingTags ? "Сохраняем..." : "Сохранить теги"}
             </button>
           </div>
@@ -209,24 +460,19 @@ export default function ProviderServices() {
         <p>Услуг пока нет.</p>
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
-          {services.map((s) => (
-            <div key={s.id} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>{s.internalCode}</div>
+          {services.map((service) => (
+            <div key={service.id} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>{service.internalCode}</div>
               <div style={{ fontWeight: 700 }}>
-                {s.title} {s.isActive ? "" : "(выключена)"}
+                {service.title} {service.isActive ? "" : "(выключена)"}
               </div>
-              <div style={{ marginTop: 6, fontSize: 13 }}>{s.description}</div>
+              <div style={{ marginTop: 6, fontSize: 13 }}>{service.description}</div>
 
               <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {(s.tags || []).map((x) => (
+                {(service.tags || []).map((x) => (
                   <span
                     key={x.tag.id}
-                    style={{
-                      fontSize: 12,
-                      padding: "2px 8px",
-                      borderRadius: 999,
-                      border: "1px solid #ddd"
-                    }}
+                    style={{ fontSize: 12, padding: "2px 8px", borderRadius: 999, border: "1px solid #ddd" }}
                   >
                     {x.tag.name}
                   </span>
@@ -234,11 +480,11 @@ export default function ProviderServices() {
               </div>
 
               <div style={{ marginTop: 8 }}>
-                <button onClick={() => openTagEditor(s)}>Теги</button>
-                <button onClick={() => toggleActive(s)} style={{ marginLeft: 8 }}>
-                  {s.isActive ? "Выключить" : "Включить"}
+                <button type="button" onClick={() => openTagEditor(service)}>Теги</button>
+                <button type="button" onClick={() => toggleActive(service)} style={{ marginLeft: 8 }}>
+                  {service.isActive ? "Выключить" : "Включить"}
                 </button>
-                <button onClick={() => softDelete(s.id)} style={{ marginLeft: 8 }}>
+                <button type="button" onClick={() => softDelete(service.id)} style={{ marginLeft: 8 }}>
                   Удалить
                 </button>
               </div>
