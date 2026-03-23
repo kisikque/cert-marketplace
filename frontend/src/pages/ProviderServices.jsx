@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { apiFetch, apiUpload } from "../api";
 import { useAuthContext } from "../AuthContext";
-import { useNavigate } from "react-router-dom";
+
+const PROVIDER_DOCUMENT_TYPES = [
+  { value: "REGISTRATION_DOC", label: "Регистрационный документ" },
+  { value: "TAX_DOC", label: "ИНН / налоговый документ" },
+  { value: "OTHER", label: "Другой документ" }
+];
+
+const API_BASE = "http://localhost:3001";
+const getImageSrc = (value) => (value?.startsWith("http") ? value : `${API_BASE}${value}`);
 
 const CATEGORY_OPTIONS = [
   { value: "CERTIFICATION", label: "Сертификация" },
@@ -26,7 +34,7 @@ const emptyService = {
 };
 
 export default function ProviderServices() {
-  const { user } = useAuthContext();
+  const { user, refresh } = useAuthContext();
   const nav = useNavigate();
   const [profile, setProfile] = useState(null);
   const [services, setServices] = useState([]);
@@ -109,6 +117,88 @@ export default function ProviderServices() {
       setError(err?.error || "Не удалось создать услугу");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function uploadVerificationDocument(e) {
+    e.preventDefault();
+    if (!verificationFile) {
+      setError("Выберите файл для верификации");
+      return;
+    }
+
+    setUploadingVerificationDoc(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", verificationFile);
+      fd.append("documentType", verificationDocType);
+      await apiUpload("/provider-verification-docs", fd);
+      setVerificationFile(null);
+      await refresh?.();
+      await load();
+    } catch (e2) {
+      setError(e2?.error || "Не удалось загрузить документ верификации");
+    } finally {
+      setUploadingVerificationDoc(false);
+    }
+  }
+
+  async function removeVerificationDocument(id) {
+    try {
+      await apiFetch(`/provider-verification-docs/${id}`, { method: "DELETE" });
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось удалить документ");
+    }
+  }
+
+  async function saveProfile(e) {
+    e.preventDefault();
+    setSavingProfile(true);
+    setError(null);
+    try {
+      await apiFetch("/provider/profile", {
+        method: "PATCH",
+        body: JSON.stringify(profileForm)
+      });
+      await refresh?.();
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось сохранить профиль провайдера");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function uploadLogo(e) {
+    e.preventDefault();
+    if (!logoFile) {
+      setError("Выберите логотип");
+      return;
+    }
+
+    setUploadingLogo(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", logoFile);
+      await apiUpload("/provider/profile/logo", fd);
+      setLogoFile(null);
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось загрузить логотип");
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
+  async function removeLogo() {
+    try {
+      await apiFetch("/provider/profile/logo", { method: "DELETE" });
+      await load();
+    } catch (e) {
+      setError(e?.error || "Не удалось удалить логотип");
     }
   }
 
