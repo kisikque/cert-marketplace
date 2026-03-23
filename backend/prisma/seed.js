@@ -7,13 +7,18 @@ async function main() {
   await prisma.serviceReview.deleteMany();
   await prisma.serviceTag.deleteMany();
   await prisma.tag.deleteMany();
+  await prisma.productCertificate.deleteMany();
+  await prisma.clientProductDocument.deleteMany();
   await prisma.orderDocument.deleteMany();
+  await prisma.orderEventLog.deleteMany();
   await prisma.orderStatusHistory.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.clientProduct.deleteMany();
   await prisma.service.deleteMany();
   await prisma.providerVerificationDocument.deleteMany();
   await prisma.providerProfile.deleteMany();
+  await prisma.customerProfile.deleteMany();
   await prisma.user.deleteMany();
 
   const adminPass = await bcrypt.hash("Admin123!", 10);
@@ -152,6 +157,52 @@ async function main() {
       { serviceId: createdServices[1].id, tagId: bySlug("eaeu") },
       { serviceId: createdServices[2].id, tagId: bySlug("iso") }
     ].filter(Boolean)
+  });
+
+  const demoOrder = await prisma.order.create({
+    data: {
+      customerId: customerUser.id,
+      providerId: provider.id,
+      customerProfileId,
+      clientProductId: clientProduct.id,
+      status: "NEW",
+      customerComment: "Нужна базовая оценка и дорожная карта по сертификации.",
+      items: {
+        create: [
+          { serviceId: createdServices[0].id, qty: 1, priceAtPurchase: createdServices[0].priceFrom },
+          { serviceId: createdServices[1].id, qty: 1, priceAtPurchase: createdServices[1].priceFrom }
+        ]
+      },
+      statusHistory: {
+        create: {
+          changedByUserId: customerUser.id,
+          fromStatus: null,
+          toStatus: "NEW",
+          comment: "Создана демонстрационная заявка"
+        }
+      }
+    }
+  });
+
+  await prisma.orderEventLog.create({
+    data: {
+      orderId: demoOrder.id,
+      changedByUserId: customerUser.id,
+      type: "PRODUCT_UPDATED",
+      message: "Пользователь изменил данные товара/услуги",
+      field: "Спецификации",
+      oldValue: "220В, 700Вт",
+      newValue: "220В, 800Вт, пластиковый корпус, 2 режима скорости"
+    }
+  });
+
+  await prisma.order.update({
+    where: { id: demoOrder.id },
+    data: {
+      providerNeedsAttention: true,
+      lastCustomerDataChangeAt: new Date(),
+      lastCustomerDataChangeType: "PRODUCT_UPDATED"
+    }
   });
 
   console.log("Seed done ✅");

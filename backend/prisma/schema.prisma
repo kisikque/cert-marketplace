@@ -154,17 +154,84 @@ model ServiceTag {
   @@index([tagId])
 }
 
+model ClientProduct {
+  id                String            @id @default(cuid())
+  customerProfileId String
+  customerProfile   CustomerProfile   @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
+  kind              ClientProductKind
+  title             String
+  description       String?
+  specs             String?
+  categoryLabel     String?
+  documentsLabel    String?           @default("Документы Товара/Услуги")
+
+  documents    ClientProductDocument[]
+  orders       Order[]
+  certificates ProductCertificate[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerProfileId])
+}
+
+model ClientProductDocument {
+  id              String @id @default(cuid())
+  clientProductId String
+  uploadedByUserId String
+
+  clientProduct ClientProduct @relation(fields: [clientProductId], references: [id], onDelete: Cascade)
+  uploadedBy    User          @relation("ProductDocUploadedBy", fields: [uploadedByUserId], references: [id])
+
+  fileName    String
+  mimeType    String
+  size        Int
+  storagePath String
+
+  createdAt DateTime @default(now())
+
+  @@index([clientProductId])
+  @@index([uploadedByUserId])
+}
+
+model ProductCertificate {
+  id              String @id @default(cuid())
+  clientProductId String
+  orderId         String
+
+  clientProduct ClientProduct @relation(fields: [clientProductId], references: [id], onDelete: Cascade)
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  title      String
+  certNumber String
+  status     String  @default("ISSUED")
+  issuedAt   DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientProductId])
+  @@index([orderId])
+}
+
 model Order {
-  id         String @id @default(cuid())
-  customerId String
-  providerId String
+  id                String @id @default(cuid())
+  customerId        String
+  providerId        String
+  customerProfileId String?
+  clientProductId   String?
 
-  customer User            @relation("CustomerOrders", fields: [customerId], references: [id])
-  provider ProviderProfile @relation(fields: [providerId], references: [id])
+  customer        User             @relation("CustomerOrders", fields: [customerId], references: [id])
+  provider        ProviderProfile  @relation(fields: [providerId], references: [id])
+  customerProfile CustomerProfile? @relation(fields: [customerProfileId], references: [id])
+  clientProduct   ClientProduct?   @relation(fields: [clientProductId], references: [id])
 
-  status          OrderStatus @default(NEW)
-  customerComment String?
-  providerComment String?
+  status                     OrderStatus @default(NEW)
+  customerComment            String?
+  providerComment            String?
+  providerNeedsAttention     Boolean     @default(false)
+  lastCustomerDataChangeAt   DateTime?
+  lastCustomerDataChangeType String?
 
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
@@ -177,6 +244,8 @@ model Order {
   @@index([customerId])
   @@index([providerId])
   @@index([status])
+  @@index([customerProfileId])
+  @@index([clientProductId])
 }
 
 model OrderItem {

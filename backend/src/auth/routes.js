@@ -1,6 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../prisma.js";
+import { normalizeCustomerProfilePayload } from "../lib/customerData.js";
 
 export const authRouter = Router();
 
@@ -84,6 +85,27 @@ authRouter.post("/register", async (req, res) => {
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return res.status(409).json({ error: "email already used" });
+
+  let normalizedCustomerProfile = null;
+  if (accountType === "CUSTOMER") {
+    try {
+      normalizedCustomerProfile = normalizeCustomerProfilePayload(customerProfile ?? {}, customerAccountKind);
+      if (
+        normalizedCustomerProfile.accountKind === "BUSINESS" &&
+        !normalizedCustomerProfile.companyName
+      ) {
+        return res.status(400).json({ error: "COMPANY_NAME_REQUIRED" });
+      }
+      if (
+        normalizedCustomerProfile.accountKind === "INDIVIDUAL" &&
+        !normalizedCustomerProfile.fullName
+      ) {
+        return res.status(400).json({ error: "FULL_NAME_REQUIRED" });
+      }
+    } catch (error) {
+      return res.status(400).json({ error: error.message || "INVALID_CUSTOMER_PROFILE" });
+    }
+  }
 
   const passwordHash = await bcrypt.hash(String(password), 10);
   const user = await prisma.user.create({

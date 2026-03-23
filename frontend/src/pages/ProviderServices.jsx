@@ -20,7 +20,7 @@ function getServiceTagIds(service) {
 export default function ProviderServices() {
   const { user, refresh } = useAuthContext();
   const nav = useNavigate();
-
+  const [profile, setProfile] = useState(null);
   const [services, setServices] = useState([]);
   const [allTags, setAllTags] = useState([]);
   const [verificationDocuments, setVerificationDocuments] = useState([]);
@@ -63,8 +63,31 @@ export default function ProviderServices() {
     if (!user || user.role !== "PROVIDER") nav("/");
   }, [user, nav]);
 
-  async function load() {
+  async function loadData() {
+    const [profileData, servicesData] = await Promise.all([apiFetch("/provider/profile"), apiFetch("/provider/services")]);
+    setProfile(profileData.profile || null);
+    setServices(servicesData.services || []);
+    setProfileForm({
+      orgName: profileData.profile?.orgName || "",
+      inn: profileData.profile?.inn || "",
+      description: profileData.profile?.description || "",
+      website: profileData.profile?.website || "",
+      phone: profileData.profile?.phone || "",
+      address: profileData.profile?.address || ""
+    });
+  }
+
+  useEffect(() => {
+    if (user?.role === "PROVIDER") {
+      loadData().catch(() => setError("Не удалось загрузить кабинет провайдера"));
+    }
+  }, [user]);
+
+  async function saveProfile(e) {
+    e.preventDefault();
+    setLoading(true);
     setError(null);
+    setSuccess(null);
     try {
       const [servicesData, tagsData, verificationData, profileData] = await Promise.all([
         apiFetch("/provider/services"),
@@ -91,13 +114,11 @@ export default function ProviderServices() {
     }
   }
 
-  useEffect(() => {
-    load();
-  }, []);
-
   async function createService(e) {
     e.preventDefault();
+    setLoading(true);
     setError(null);
+    setSuccess(null);
     try {
       let nextImageUrl = imageUrl || null;
       if (serviceImageFile) {
@@ -186,7 +207,7 @@ export default function ProviderServices() {
     } catch (e) {
       setError(e?.error || "Не удалось сохранить теги");
     } finally {
-      setSavingTags(false);
+      setLoading(false);
     }
   }
 
@@ -540,10 +561,10 @@ export default function ProviderServices() {
                   Удалить
                 </button>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            </article>
+          ))
+        )}
+      </section>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import path from "path";
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { requireAuth, requireRole } from "../auth/middleware.js";
+import { handleProviderOrderStatusSideEffects } from "../orders/routes.js";
 
 export const providerRouter = Router();
 
@@ -164,6 +165,7 @@ providerRouter.get("/orders", requireAuth, requireRole(["PROVIDER"]), async (req
     where: { providerId: pp.id },
     include: {
       customer: { select: { id: true, email: true, displayName: true } },
+      clientProduct: { select: { id: true, title: true, kind: true } },
       items: { include: { service: true } }
     },
     orderBy: { createdAt: "desc" }
@@ -174,6 +176,8 @@ providerRouter.get("/orders", requireAuth, requireRole(["PROVIDER"]), async (req
       id: o.id,
       status: o.status,
       createdAt: o.createdAt,
+      providerNeedsAttention: o.providerNeedsAttention,
+      clientProduct: o.clientProduct,
       customer: o.customer,
       items: o.items.map((it) => ({
         serviceTitle: it.service.title,
@@ -191,8 +195,11 @@ providerRouter.get("/orders/:id", requireAuth, requireRole(["PROVIDER"]), async 
     where: { id: req.params.id, providerId: pp.id },
     include: {
       customer: { select: { id: true, email: true, displayName: true } },
+      customerProfile: true,
+      clientProduct: { include: { documents: { orderBy: { createdAt: "desc" } }, certificates: { orderBy: { issuedAt: "desc" } } } },
       items: { include: { service: true } },
       statusHistory: { orderBy: { createdAt: "asc" } },
+      eventLogs: { orderBy: { createdAt: "desc" } },
       documents: { orderBy: { createdAt: "desc" } }
     }
   });
@@ -204,7 +211,31 @@ providerRouter.get("/orders/:id", requireAuth, requireRole(["PROVIDER"]), async 
       id: order.id,
       status: order.status,
       createdAt: order.createdAt,
+      providerNeedsAttention: order.providerNeedsAttention,
+      lastCustomerDataChangeAt: order.lastCustomerDataChangeAt,
+      lastCustomerDataChangeType: order.lastCustomerDataChangeType,
       customer: order.customer,
+      customerProfile: order.customerProfile,
+      clientProduct: order.clientProduct
+        ? {
+            ...order.clientProduct,
+            documents: order.clientProduct.documents.map((d) => ({
+              id: d.id,
+              fileName: d.fileName,
+              size: d.size,
+              mimeType: d.mimeType,
+              createdAt: d.createdAt
+            })),
+            certificates: order.clientProduct.certificates.map((certificate) => ({
+              id: certificate.id,
+              title: certificate.title,
+              certNumber: certificate.certNumber,
+              status: certificate.status,
+              issuedAt: certificate.issuedAt,
+              orderId: certificate.orderId
+            }))
+          }
+        : null,
       items: order.items.map((it) => ({
         serviceId: it.serviceId,
         title: it.service.title,
@@ -215,6 +246,15 @@ providerRouter.get("/orders/:id", requireAuth, requireRole(["PROVIDER"]), async 
         toStatus: h.toStatus,
         comment: h.comment,
         createdAt: h.createdAt
+      })),
+      eventLogs: order.eventLogs.map((event) => ({
+        id: event.id,
+        type: event.type,
+        message: event.message,
+        field: event.field,
+        oldValue: event.oldValue,
+        newValue: event.newValue,
+        createdAt: event.createdAt
       })),
       documents: order.documents.map((d) => ({
         id: d.id,
@@ -244,6 +284,7 @@ providerRouter.post("/orders/:id/status", requireAuth, requireRole(["PROVIDER"])
     where: { id: req.params.id },
     data: {
       status: toStatus,
+      providerNeedsAttention: false,
       statusHistory: {
         create: {
           changedByUserId: req.session.user.id,
@@ -254,6 +295,8 @@ providerRouter.post("/orders/:id/status", requireAuth, requireRole(["PROVIDER"])
       }
     }
   });
+
+  await handleProviderOrderStatusSideEffects(order.id, toStatus, req.session.user.id);
 
   res.json({ ok: true, status: updated.status });
 });
@@ -360,7 +403,7 @@ providerRouter.patch("/services/:id", requireAuth, requireRole(["PROVIDER"]), as
   } catch {
     return res.status(409).json({ error: "SERVICE_CODE_ALREADY_EXISTS" });
   }
-});
+);
 
 providerRouter.delete("/services/:id", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
   const pp = await getProviderProfile(req.session.user.id);
@@ -379,19 +422,25 @@ providerRouter.get("/tags", requireAuth, requireRole(["PROVIDER"]), async (req, 
   res.json({ tags });
 });
 
-providerRouter.post("/tags", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
-  const { name, slug } = req.body ?? {};
-  if (!name || !slug) return res.status(400).json({ error: "name/slug required" });
+  const updated = await prisma.service.update({
+    where: { id: service.id },
+    data: {
+      ...(patch.internalCode !== undefined ? { internalCode: String(patch.internalCode).trim() } : {}),
+      ...(patch.title !== undefined ? { title: String(patch.title).trim() } : {}),
+      ...(patch.description !== undefined ? { description: String(patch.description).trim() } : {}),
+      ...(patch.category !== undefined ? { category: normalizedCategory } : {}),
+      ...(patch.certificationKind !== undefined ? { certificationKind: normalizeCertificationKind(normalizedCategory, patch.certificationKind) } : {}),
+      ...(patch.priceFrom !== undefined ? { priceFrom: patch.priceFrom == null ? null : Number(patch.priceFrom) } : {}),
+      ...(patch.etaDaysFrom !== undefined ? { etaDaysFrom: patch.etaDaysFrom == null ? null : Number(patch.etaDaysFrom) } : {}),
+      ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl || null } : {}),
+      ...(patch.isActive !== undefined ? { isActive: canPublishServices(pp) && Boolean(patch.isActive) } : {})
+    }
+  });
 
-  try {
-    const tag = await prisma.tag.create({ data: { name, slug } });
-    res.json({ tag });
-  } catch {
-    res.status(409).json({ error: "TAG_EXISTS" });
-  }
+  res.json({ service: updated });
 });
 
-providerRouter.put("/services/:id/tags", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
+providerRouter.delete("/services/:id", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
 
@@ -408,5 +457,7 @@ providerRouter.put("/services/:id/tags", requireAuth, requireRole(["PROVIDER"]),
     });
   }
 
+  await removeServiceImageIfPresent(service.imageUrl);
+  await prisma.service.delete({ where: { id: service.id } });
   res.json({ ok: true });
 });

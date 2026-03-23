@@ -1,8 +1,31 @@
-import { useEffect, useState } from "react";
-import { apiFetch } from "../api";
+import { useCallback, useEffect, useState } from "react";
+import { apiFetch, apiUpload } from "../api";
 import { useAuthContext } from "../AuthContext";
-import { useNavigate, useParams } from "react-router-dom";
-import { apiUpload } from "../api";
+import { Link, useNavigate, useParams } from "react-router-dom";
+
+function profileDraftFromOrder(order) {
+  return {
+    fullName: order?.customerProfile?.fullName || "",
+    companyName: order?.customerProfile?.companyName || "",
+    contactName: order?.customerProfile?.contactName || "",
+    phone: order?.customerProfile?.phone || "",
+    address: order?.customerProfile?.address || "",
+    inn: order?.customerProfile?.inn || "",
+    kpp: order?.customerProfile?.kpp || "",
+    ogrn: order?.customerProfile?.ogrn || "",
+    position: order?.customerProfile?.position || ""
+  };
+}
+
+function productDraftFromOrder(order) {
+  return {
+    kind: order?.clientProduct?.kind || "PRODUCT",
+    title: order?.clientProduct?.title || "",
+    description: order?.clientProduct?.description || "",
+    specs: order?.clientProduct?.specs || "",
+    categoryLabel: order?.clientProduct?.categoryLabel || ""
+  };
+}
 
 export default function OrderDetails() {
   const { user } = useAuthContext();
@@ -79,12 +102,137 @@ export default function OrderDetails() {
   if (error) return <p style={{ color: "crimson" }}>{error}</p>;
   if (!order) return <p>Загрузка...</p>;
 
+  const isBusiness = order.customerProfile?.accountKind === "BUSINESS";
+
   return (
-    <div style={{ maxWidth: 900 }}>
-      <h2>Заявка #{order.id}</h2>
-      <p>
-        Статус: <b>{order.status}</b>
-      </p>
+    <div style={{ maxWidth: 940, display: "grid", gap: 18 }}>
+      <div>
+        <h2>Заявка #{order.id}</h2>
+        <p>
+          Статус: <b>{order.status}</b>
+        </p>
+      </div>
+
+      <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14, display: "grid", gap: 10 }}>
+        <h3 style={{ margin: 0 }}>Автоподтянутые данные покупателя</h3>
+        <div style={{ fontSize: 13, opacity: 0.72 }}>
+          Изменения здесь обновляют ваш профиль покупателя и связанные заявки.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+          {isBusiness ? (
+            <>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Компания</span>
+                <input value={profileDraft.companyName || ""} onChange={(e) => setProfileDraft((prev) => ({ ...prev, companyName: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Контактное лицо</span>
+                <input value={profileDraft.contactName || ""} onChange={(e) => setProfileDraft((prev) => ({ ...prev, contactName: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Должность</span>
+                <input value={profileDraft.position || ""} onChange={(e) => setProfileDraft((prev) => ({ ...prev, position: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>ИНН</span>
+                <input value={profileDraft.inn || ""} onChange={(e) => setProfileDraft((prev) => ({ ...prev, inn: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>КПП</span>
+                <input value={profileDraft.kpp || ""} onChange={(e) => setProfileDraft((prev) => ({ ...prev, kpp: e.target.value }))} />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>ОГРН / ОГРНИП</span>
+                <input value={profileDraft.ogrn || ""} onChange={(e) => setProfileDraft((prev) => ({ ...prev, ogrn: e.target.value }))} />
+              </label>
+            </>
+          ) : (
+            <label style={{ display: "grid", gap: 6 }}>
+              <span>ФИО</span>
+              <input value={profileDraft.fullName || ""} onChange={(e) => setProfileDraft((prev) => ({ ...prev, fullName: e.target.value }))} />
+            </label>
+          )}
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Телефон</span>
+            <input value={profileDraft.phone || ""} onChange={(e) => setProfileDraft((prev) => ({ ...prev, phone: e.target.value }))} />
+          </label>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Адрес</span>
+            <input value={profileDraft.address || ""} onChange={(e) => setProfileDraft((prev) => ({ ...prev, address: e.target.value }))} />
+          </label>
+        </div>
+        <button type="button" style={{ width: "fit-content" }} disabled={savingSection === "profile"} onClick={saveProfile}>
+          {savingSection === "profile" ? "Сохраняем..." : "Сохранить данные покупателя"}
+        </button>
+      </section>
+
+      <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14, display: "grid", gap: 10 }}>
+        <h3 style={{ margin: 0 }}>Продукт по заявке</h3>
+        <div style={{ fontSize: 13, opacity: 0.72 }}>
+          Изменения здесь обновляют карточку продукта и будут видны провайдеру в логах.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Тип</span>
+            <select value={productDraft.kind || "PRODUCT"} onChange={(e) => setProductDraft((prev) => ({ ...prev, kind: e.target.value }))}>
+              <option value="PRODUCT">Товар</option>
+              <option value="SERVICE">Услуга</option>
+            </select>
+          </label>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Название</span>
+            <input value={productDraft.title || ""} onChange={(e) => setProductDraft((prev) => ({ ...prev, title: e.target.value }))} />
+          </label>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Категория</span>
+            <input value={productDraft.categoryLabel || ""} onChange={(e) => setProductDraft((prev) => ({ ...prev, categoryLabel: e.target.value }))} />
+          </label>
+        </div>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span>Описание</span>
+          <textarea rows={3} value={productDraft.description || ""} onChange={(e) => setProductDraft((prev) => ({ ...prev, description: e.target.value }))} />
+        </label>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span>Спеки / характеристики</span>
+          <textarea rows={3} value={productDraft.specs || ""} onChange={(e) => setProductDraft((prev) => ({ ...prev, specs: e.target.value }))} />
+        </label>
+        <button type="button" style={{ width: "fit-content" }} disabled={savingSection === "product"} onClick={saveProduct}>
+          {savingSection === "product" ? "Сохраняем..." : "Сохранить продукт"}
+        </button>
+
+        <div>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Документы Товара/Услуги</div>
+          {order.clientProduct?.documents?.length ? (
+            <ul>
+              {order.clientProduct.documents.map((doc) => (
+                <li key={doc.id}>
+                  <a href={`http://localhost:3001/api/customer/products/${order.clientProduct.id}/documents/${doc.id}/download`} target="_blank" rel="noreferrer">
+                    {doc.fileName}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div style={{ fontSize: 13, opacity: 0.68 }}>Документов по продукту пока нет.</div>
+          )}
+        </div>
+
+        <div>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Полученные сертификаты по продукту</div>
+          {order.clientProduct?.certificates?.length ? (
+            <ul>
+              {order.clientProduct.certificates.map((certificate) => (
+                <li key={certificate.id}>
+                  {certificate.title} — {certificate.certNumber} · {new Date(certificate.issuedAt).toLocaleDateString()} ·{" "}
+                  <Link to={`/orders/${certificate.orderId}`}>перейти к заявке</Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div style={{ fontSize: 13, opacity: 0.68 }}>Сертификаты появятся после успешного закрытия заявки.</div>
+          )}
+        </div>
+      </section>
 
       <h3>Состав</h3>
       <ul>
@@ -167,8 +315,7 @@ export default function OrderDetails() {
       <ul>
         {order.statusHistory.map((h, idx) => (
           <li key={idx}>
-            {new Date(h.createdAt).toLocaleString()} —{" "}
-            {h.fromStatus ?? "—"} → <b>{h.toStatus}</b>
+            {new Date(h.createdAt).toLocaleString()} — {h.fromStatus ?? "—"} → <b>{h.toStatus}</b>
             {h.comment ? ` (${h.comment})` : ""}
           </li>
         ))}
