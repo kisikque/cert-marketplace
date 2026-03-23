@@ -92,12 +92,14 @@ export default function ProviderProfile() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
             {provider.services.map((service) => (
               <div key={service.id} style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14 }}>
-                {service.imageUrl && (
-                  <div style={{ marginBottom: 10, borderRadius: 12, overflow: "hidden", border: "1px solid #ddd", aspectRatio: "16 / 9" }}>
-                    <img src={getImageSrc(service.imageUrl)} alt={service.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                {service.imageUrl && (                  
+                  <div style={{ borderRadius: 12, overflow: "hidden", width: 420, maxHeight: 260, border: "1px solid #e5e7eb",
+                   background: "#f9fafb",}}>
+                    <img src={getImageSrc(service.imageUrl)} alt={service.title} style={{ width: "100%", height: "100%", maxHeight: 260, 
+                      dislpay: "block", objectFit: "cover" }} />
                   </div>
                 )}
-                <div style={{ fontWeight: 700 }}>{service.title}</div>
+                                <div style={{ fontWeight: 700 }}>{service.title}</div>
                 <div style={{ marginTop: 6, fontSize: 13 }}>
                   {service.ratingCount ? `★ ${service.ratingAvg.toFixed(1)} (${service.ratingCount})` : "Пока без оценок"}
                 </div>
