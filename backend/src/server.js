@@ -32,6 +32,7 @@ app.use(
 app.use(express.json());
 app.use(sessionMiddleware());
 app.use("/provider-logos", express.static(path.resolve("provider-logos")));
+app.use("/service-images", express.static(path.resolve("service-images")));
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
@@ -58,6 +59,9 @@ app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   if (err?.message === "INVALID_LOGO_FILE_TYPE") {
     return res.status(400).json({ error: "INVALID_LOGO_FILE_TYPE" });
+  }
+  if (err?.message === "INVALID_SERVICE_IMAGE_FILE_TYPE") {
+    return res.status(400).json({ error: "INVALID_SERVICE_IMAGE_FILE_TYPE" });
   }
   res.status(500).json({ error: "INTERNAL_ERROR" });
 });

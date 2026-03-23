@@ -10,12 +10,7 @@ const PROVIDER_DOCUMENT_TYPES = [
 ];
 
 const API_BASE = "http://localhost:3001";
-
-const PROVIDER_DOCUMENT_TYPES = [
-  { value: "REGISTRATION_DOC", label: "Регистрационный документ" },
-  { value: "TAX_DOC", label: "ИНН / налоговый документ" },
-  { value: "OTHER", label: "Другой документ" }
-];
+const getImageSrc = (value) => (value?.startsWith("http") ? value : `${API_BASE}${value}`);
 
 function getServiceTagIds(service) {
   return (service.tags || []).map((x) => x.tag?.id).filter(Boolean);
@@ -34,8 +29,10 @@ export default function ProviderServices() {
   const [verificationDocType, setVerificationDocType] = useState(PROVIDER_DOCUMENT_TYPES[0].value);
   const [verificationFile, setVerificationFile] = useState(null);
   const [logoFile, setLogoFile] = useState(null);
+  const [serviceImageFile, setServiceImageFile] = useState(null);
   const [uploadingVerificationDoc, setUploadingVerificationDoc] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [error, setError] = useState(null);
   const [uploadingVerificationDoc, setUploadingVerificationDoc] = useState(false);
@@ -45,6 +42,7 @@ export default function ProviderServices() {
   const [description, setDescription] = useState("");
   const [priceFrom, setPriceFrom] = useState("");
   const [etaDaysFrom, setEtaDaysFrom] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
 
   const [profileForm, setProfileForm] = useState({
     orgName: "",
@@ -99,6 +97,15 @@ export default function ProviderServices() {
     e.preventDefault();
     setError(null);
     try {
+      let nextImageUrl = imageUrl || null;
+      if (serviceImageFile) {
+        setUploadingServiceImage(true);
+        const fd = new FormData();
+        fd.append("file", serviceImageFile);
+        const uploadData = await apiUpload("/provider/services/upload-image", fd);
+        nextImageUrl = uploadData.imageUrl;
+      }
+
       await apiFetch("/provider/services", {
         method: "POST",
         body: JSON.stringify({
@@ -106,7 +113,8 @@ export default function ProviderServices() {
           title,
           description,
           priceFrom: priceFrom ? Number(priceFrom) : null,
-          etaDaysFrom: etaDaysFrom ? Number(etaDaysFrom) : null
+          etaDaysFrom: etaDaysFrom ? Number(etaDaysFrom) : null,
+          imageUrl: nextImageUrl
         })
       });
       setInternalCode("");
@@ -114,9 +122,13 @@ export default function ProviderServices() {
       setDescription("");
       setPriceFrom("");
       setEtaDaysFrom("");
+      setImageUrl("");
+      setServiceImageFile(null);
       await load();
     } catch (e2) {
       setError(e2?.error || "Ошибка создания услуги");
+    } finally {
+      setUploadingServiceImage(false);
     }
   }
 
@@ -293,7 +305,7 @@ export default function ProviderServices() {
                 }}
               >
                 {profile.logoUrl ? (
-                  <img src={`${API_BASE}${profile.logoUrl}`} alt={profile.orgName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <img src={getImageSrc(profile.logoUrl)} alt={profile.orgName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 ) : (
                   <span style={{ fontSize: 32, opacity: 0.35 }}>{profile.orgName?.slice(0, 1) || "P"}</span>
                 )}
@@ -407,9 +419,15 @@ export default function ProviderServices() {
 
           <label>Срок от (дней)</label>
           <input value={etaDaysFrom} onChange={(e) => setEtaDaysFrom(e.target.value)} />
+
+          <label>Ссылка на фото</label>
+          <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="/service-images/... или внешний URL" />
+
+          <label>Загрузить фото</label>
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setServiceImageFile(e.target.files?.[0] || null)} />
         </div>
         <button style={{ marginTop: 10 }} type="submit">
-          Создать
+          {uploadingServiceImage ? "Загружаем фото..." : "Создать"}
         </button>
       </form>
 
@@ -462,9 +480,17 @@ export default function ProviderServices() {
         <div style={{ display: "grid", gap: 10 }}>
           {services.map((service) => (
             <div key={service.id} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
+              {service.imageUrl && (
+                <div style={{ marginBottom: 10, borderRadius: 12, overflow: "hidden", border: "1px solid #ddd", width: 220, maxWidth: "100%", aspectRatio: "16 / 9" }}>
+                  <img src={getImageSrc(service.imageUrl)} alt={service.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                </div>
+              )}
               <div style={{ fontSize: 12, opacity: 0.7 }}>{service.internalCode}</div>
               <div style={{ fontWeight: 700 }}>
                 {service.title} {service.isActive ? "" : "(выключена)"}
+              </div>
+              <div style={{ marginTop: 4, fontSize: 13 }}>
+                {service.ratingCount ? `★ ${service.ratingAvg.toFixed(1)} (${service.ratingCount})` : "Пока без оценок"}
               </div>
               <div style={{ marginTop: 6, fontSize: 13 }}>{service.description}</div>
 

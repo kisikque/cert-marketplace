@@ -7,6 +7,10 @@ providersRouter.get("/:slug", async (req, res) => {
   const profile = await prisma.providerProfile.findUnique({
     where: { publicSlug: req.params.slug },
     include: {
+      serviceReviews: {
+        orderBy: { createdAt: "desc" },
+        take: 10
+      },
       services: {
         where: { isActive: true },
         include: {
@@ -32,6 +36,18 @@ providersRouter.get("/:slug", async (req, res) => {
       logoUrl: profile.logoUrl,
       publicSlug: profile.publicSlug,
       verificationStatus: profile.verificationStatus,
+      ratingAvg: profile.ratingAvg,
+      ratingCount: profile.ratingCount,
+      reviews: profile.serviceReviews.map((review) => ({
+        id: review.id,
+        rating: review.rating,
+        text: review.text,
+        isAnonymous: review.isAnonymous,
+        displayUserId: review.displayUserId,
+        customerLabel:
+          review.isAnonymous ? "Анонимный покупатель" : review.displayUserId ? `Покупатель #${review.customerId.slice(-6)}` : "Покупатель",
+        createdAt: review.createdAt
+      })),
       services: profile.services.map((service) => ({
         id: service.id,
         title: service.title,
@@ -39,6 +55,8 @@ providersRouter.get("/:slug", async (req, res) => {
         priceFrom: service.priceFrom,
         etaDaysFrom: service.etaDaysFrom,
         imageUrl: service.imageUrl,
+        ratingAvg: service.ratingAvg,
+        ratingCount: service.ratingCount,
         tags: service.tags.map((x) => ({ id: x.tag.id, name: x.tag.name, slug: x.tag.slug }))
       }))
     }

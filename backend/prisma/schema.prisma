@@ -41,6 +41,7 @@ model User {
   statusChanges        OrderStatusHistory[]           @relation("StatusChangedBy")
   uploadedDocs         OrderDocument[]                @relation("DocUploadedBy")
   uploadedProviderDocs ProviderVerificationDocument[] @relation("ProviderDocUploadedBy")
+  serviceReviews       ServiceReview[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -63,10 +64,13 @@ model ProviderProfile {
   verificationComment String?
   submittedAt         DateTime?
   verifiedAt          DateTime?
+  ratingAvg           Float              @default(0)
+  ratingCount         Int                @default(0)
 
   services              Service[]
   orders                Order[]
   verificationDocuments ProviderVerificationDocument[]
+  serviceReviews        ServiceReview[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -104,9 +108,12 @@ model Service {
   etaDaysFrom  Int?
   imageUrl     String?
   isActive     Boolean @default(true)
+  ratingAvg    Float   @default(0)
+  ratingCount  Int     @default(0)
 
   orderItems OrderItem[]
   tags       ServiceTag[]
+  reviews    ServiceReview[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -149,6 +156,7 @@ model Order {
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
   documents     OrderDocument[]
+  reviews       ServiceReview[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -168,11 +176,38 @@ model OrderItem {
 
   qty             Int @default(1)
   priceAtPurchase Int?
+  review          ServiceReview?
 
   createdAt DateTime @default(now())
 
   @@index([orderId])
   @@index([serviceId])
+}
+
+model ServiceReview {
+  id             String @id @default(cuid())
+  serviceId      String
+  providerId     String
+  customerId     String
+  orderId        String
+  orderItemId    String @unique
+  rating         Int
+  text           String?
+  isAnonymous    Boolean @default(true)
+  displayUserId  Boolean @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  service   Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  provider  ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  customer  User            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order     Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+  @@index([providerId])
+  @@index([customerId])
+  @@index([orderId])
 }
 
 model OrderStatusHistory {

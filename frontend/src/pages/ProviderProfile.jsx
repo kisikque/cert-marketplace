@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { apiFetch } from "../api";
 
 const API_BASE = "http://localhost:3001";
+const getImageSrc = (value) => (value?.startsWith("http") ? value : `${API_BASE}${value}`);
 
 export default function ProviderProfile() {
   const { slug } = useParams();
@@ -37,7 +38,7 @@ export default function ProviderProfile() {
           >
             {provider.logoUrl ? (
               <img
-                src={`${API_BASE}${provider.logoUrl}`}
+                src={getImageSrc(provider.logoUrl)}
                 alt={provider.orgName}
                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
               />
@@ -61,6 +62,9 @@ export default function ProviderProfile() {
               >
                 Проверенный провайдер
               </span>
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>
+              {provider.ratingCount ? `★ ${provider.ratingAvg.toFixed(1)} · ${provider.ratingCount} отзывов` : "Пока нет отзывов"}
             </div>
             {provider.description && <div style={{ fontSize: 15 }}>{provider.description}</div>}
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 14 }}>
@@ -88,7 +92,15 @@ export default function ProviderProfile() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
             {provider.services.map((service) => (
               <div key={service.id} style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14 }}>
+                {service.imageUrl && (
+                  <div style={{ marginBottom: 10, borderRadius: 12, overflow: "hidden", border: "1px solid #ddd", aspectRatio: "16 / 9" }}>
+                    <img src={getImageSrc(service.imageUrl)} alt={service.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  </div>
+                )}
                 <div style={{ fontWeight: 700 }}>{service.title}</div>
+                <div style={{ marginTop: 6, fontSize: 13 }}>
+                  {service.ratingCount ? `★ ${service.ratingAvg.toFixed(1)} (${service.ratingCount})` : "Пока без оценок"}
+                </div>
                 <div style={{ marginTop: 8, fontSize: 14 }}>{service.description}</div>
                 <div style={{ marginTop: 10, fontSize: 14 }}>
                   <b>от {service.priceFrom ?? "—"} ₽</b> • срок от {service.etaDaysFrom ?? "—"} дн.
@@ -109,6 +121,28 @@ export default function ProviderProfile() {
               </div>
             ))}
           </div>
+        )}
+      </section>
+
+      <section style={{ display: "grid", gap: 12 }}>
+        <h3 style={{ margin: 0 }}>Отзывы покупателей</h3>
+        {provider.reviews?.length ? (
+          <div style={{ display: "grid", gap: 10 }}>
+            {provider.reviews.map((review) => (
+              <article key={review.id} style={{ border: "1px solid #ddd", borderRadius: 12, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <strong>{review.customerLabel}</strong>
+                  <span>{`★ ${review.rating}`}</span>
+                </div>
+                <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
+                  {new Date(review.createdAt).toLocaleDateString()}
+                </div>
+                <div style={{ marginTop: 8 }}>{review.text || "Покупатель не оставил текстовый комментарий."}</div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p>Пока отзывов нет.</p>
         )}
       </section>
     </div>

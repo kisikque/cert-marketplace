@@ -4,6 +4,38 @@ import { requireAuth, requireRole } from "../auth/middleware.js";
 
 export const ordersRouter = Router();
 
+async function recalculateRatings(serviceId, providerId) {
+  const [serviceAgg, providerAgg] = await Promise.all([
+    prisma.serviceReview.aggregate({
+      where: { serviceId },
+      _avg: { rating: true },
+      _count: { rating: true }
+    }),
+    prisma.serviceReview.aggregate({
+      where: { providerId },
+      _avg: { rating: true },
+      _count: { rating: true }
+    })
+  ]);
+
+  await Promise.all([
+    prisma.service.update({
+      where: { id: serviceId },
+      data: {
+        ratingAvg: serviceAgg._avg.rating ?? 0,
+        ratingCount: serviceAgg._count.rating ?? 0
+      }
+    }),
+    prisma.providerProfile.update({
+      where: { id: providerId },
+      data: {
+        ratingAvg: providerAgg._avg.rating ?? 0,
+        ratingCount: providerAgg._count.rating ?? 0
+      }
+    })
+  ]);
+}
+
 // CUSTOMER: создать заявку из корзины
 ordersRouter.post("/", requireAuth, requireRole(["CUSTOMER"]), async (req, res) => {
   const userId = req.session.user.id;
@@ -99,7 +131,7 @@ ordersRouter.get("/:id", requireAuth, requireRole(["CUSTOMER"]), async (req, res
     where: { id, customerId: userId },
     include: {
       provider: { select: { id: true, orgName: true, phone: true } },
-      items: { include: { service: true } },
+      items: { include: { service: true, review: true } },
       statusHistory: { orderBy: { createdAt: "asc" } },
       documents: { orderBy: { createdAt: "desc" } }
     }
@@ -117,9 +149,21 @@ ordersRouter.get("/:id", requireAuth, requireRole(["CUSTOMER"]), async (req, res
       provider: order.provider,
       items: order.items.map((it) => ({
         serviceId: it.serviceId,
+        orderItemId: it.id,
         title: it.service.title,
         qty: it.qty,
-        priceAtPurchase: it.priceAtPurchase
+        priceAtPurchase: it.priceAtPurchase,
+        review: it.review
+          ? {
+              id: it.review.id,
+              rating: it.review.rating,
+              text: it.review.text,
+              isAnonymous: it.review.isAnonymous,
+              displayUserId: it.review.displayUserId,
+              createdAt: it.review.createdAt,
+              updatedAt: it.review.updatedAt
+            }
+          : null
       })),
       statusHistory: order.statusHistory.map((h) => ({
         fromStatus: h.fromStatus,
@@ -137,4 +181,64 @@ ordersRouter.get("/:id", requireAuth, requireRole(["CUSTOMER"]), async (req, res
       }))
     }
   });
+});
+
+ordersRouter.post("/:id/items/:itemId/review", requireAuth, requireRole(["CUSTOMER"]), async (req, res) => {
+  const userId = req.session.user.id;
+  const { rating, text, isAnonymous, displayUserId } = req.body ?? {};
+  const normalizedRating = Number(rating);
+  if (!Number.isInteger(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
+    return res.status(400).json({ error: "RATING_MUST_BE_1_TO_5" });
+  }
+
+  const orderItem = await prisma.orderItem.findFirst({
+    where: { id: req.params.itemId, orderId: req.params.id, order: { customerId: userId } },
+    include: { order: true, service: true, review: true }
+  });
+  if (!orderItem) return res.status(404).json({ error: "NOT_FOUND" });
+  if (orderItem.review) return res.status(409).json({ error: "REVIEW_ALREADY_EXISTS" });
+
+  const review = await prisma.serviceReview.create({
+    data: {
+      serviceId: orderItem.serviceId,
+      providerId: orderItem.order.providerId,
+      customerId: userId,
+      orderId: orderItem.orderId,
+      orderItemId: orderItem.id,
+      rating: normalizedRating,
+      text: typeof text === "string" ? text.trim() || null : null,
+      isAnonymous: Boolean(isAnonymous ?? true),
+      displayUserId: Boolean(displayUserId ?? false)
+    }
+  });
+
+  await recalculateRatings(orderItem.serviceId, orderItem.order.providerId);
+  res.json({ review });
+});
+
+ordersRouter.patch("/:id/items/:itemId/review", requireAuth, requireRole(["CUSTOMER"]), async (req, res) => {
+  const userId = req.session.user.id;
+  const { rating, text, isAnonymous, displayUserId } = req.body ?? {};
+  const normalizedRating = Number(rating);
+  if (!Number.isInteger(normalizedRating) || normalizedRating < 1 || normalizedRating > 5) {
+    return res.status(400).json({ error: "RATING_MUST_BE_1_TO_5" });
+  }
+
+  const review = await prisma.serviceReview.findFirst({
+    where: { orderItemId: req.params.itemId, orderId: req.params.id, customerId: userId }
+  });
+  if (!review) return res.status(404).json({ error: "NOT_FOUND" });
+
+  const updated = await prisma.serviceReview.update({
+    where: { id: review.id },
+    data: {
+      rating: normalizedRating,
+      text: typeof text === "string" ? text.trim() || null : null,
+      isAnonymous: Boolean(isAnonymous ?? true),
+      displayUserId: Boolean(displayUserId ?? false)
+    }
+  });
+
+  await recalculateRatings(review.serviceId, review.providerId);
+  res.json({ review: updated });
 });

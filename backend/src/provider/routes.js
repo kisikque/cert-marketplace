@@ -8,7 +8,9 @@ import { requireAuth, requireRole } from "../auth/middleware.js";
 export const providerRouter = Router();
 
 const logoUploadDir = path.resolve("provider-logos");
+const serviceImageUploadDir = path.resolve("service-images");
 if (!fs.existsSync(logoUploadDir)) fs.mkdirSync(logoUploadDir, { recursive: true });
+if (!fs.existsSync(serviceImageUploadDir)) fs.mkdirSync(serviceImageUploadDir, { recursive: true });
 
 const logoStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, logoUploadDir),
@@ -25,6 +27,24 @@ const logoUpload = multer({
   fileFilter: (req, file, cb) => {
     if (["image/png", "image/jpeg", "image/webp"].includes(file.mimetype)) cb(null, true);
     else cb(new Error("INVALID_LOGO_FILE_TYPE"));
+  }
+});
+
+const serviceImageStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, serviceImageUploadDir),
+  filename: (req, file, cb) => {
+    const safe = file.originalname.replace(/[^\w.\-() ]+/g, "_");
+    const unique = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    cb(null, `${unique}__${safe}`);
+  }
+});
+
+const serviceImageUpload = multer({
+  storage: serviceImageStorage,
+  limits: { fileSize: 4 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (["image/png", "image/jpeg", "image/webp"].includes(file.mimetype)) cb(null, true);
+    else cb(new Error("INVALID_SERVICE_IMAGE_FILE_TYPE"));
   }
 });
 
@@ -53,6 +73,14 @@ async function removeLogoIfPresent(logoUrl) {
   const fileName = logoUrl.split("/").pop();
   if (!fileName) return;
   const filePath = path.join(logoUploadDir, fileName);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+}
+
+async function removeServiceImageIfPresent(imageUrl) {
+  if (!imageUrl || !imageUrl.startsWith("/service-images/")) return;
+  const fileName = imageUrl.split("/").pop();
+  if (!fileName) return;
+  const filePath = path.join(serviceImageUploadDir, fileName);
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
@@ -268,6 +296,17 @@ providerRouter.post("/services", requireAuth, requireRole(["PROVIDER"]), async (
   }
 });
 
+providerRouter.post(
+  "/services/upload-image",
+  requireAuth,
+  requireRole(["PROVIDER"]),
+  serviceImageUpload.single("file"),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "file required" });
+    res.json({ imageUrl: `/service-images/${req.file.filename}` });
+  }
+);
+
 providerRouter.patch("/services/:id", requireAuth, requireRole(["PROVIDER"]), async (req, res) => {
   const pp = await getProviderProfile(req.session.user.id);
   if (!pp) return res.status(403).json({ error: "NO_PROVIDER_PROFILE" });
@@ -291,6 +330,9 @@ providerRouter.patch("/services/:id", requireAuth, requireRole(["PROVIDER"]), as
   };
 
   try {
+    if (patch.imageUrl !== undefined && patch.imageUrl !== existing.imageUrl) {
+      await removeServiceImageIfPresent(existing.imageUrl);
+    }
     const service = await prisma.service.update({ where: { id: req.params.id }, data });
     res.json({ service });
   } catch {
@@ -305,6 +347,7 @@ providerRouter.delete("/services/:id", requireAuth, requireRole(["PROVIDER"]), a
   const existing = await prisma.service.findFirst({ where: { id: req.params.id, providerId: pp.id } });
   if (!existing) return res.status(404).json({ error: "NOT_FOUND" });
 
+  await removeServiceImageIfPresent(existing.imageUrl);
   await prisma.service.update({ where: { id: req.params.id }, data: { isActive: false } });
   res.json({ ok: true });
 });

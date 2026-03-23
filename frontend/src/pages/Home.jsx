@@ -5,6 +5,7 @@ import { useAuthContext } from "../AuthContext";
 import { addItem, clearCart } from "../cart";
 
 const API_BASE = "http://localhost:3001";
+const getImageSrc = (value) => (value?.startsWith("http") ? value : `${API_BASE}${value}`);
 
 export default function Home() {
   const nav = useNavigate();
@@ -56,6 +57,11 @@ export default function Home() {
     nav("/cart");
   }
 
+  function formatRating(service) {
+    if (!service.ratingCount) return "Пока без оценок";
+    return `★ ${service.ratingAvg.toFixed(1)} (${service.ratingCount})`;
+  }
+
   return (
     <div>
       <h2>Витрина услуг</h2>
@@ -94,7 +100,27 @@ export default function Home() {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
           {filtered.map((service) => (
-            <div key={service.id} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
+            <div key={service.id} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12, display: "grid", gap: 10 }}>
+              <div
+                style={{
+                  width: "100%",
+                  aspectRatio: "16 / 9",
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  border: "1px solid #ddd",
+                  background: "#fafafa",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}
+              >
+                {service.imageUrl ? (
+                  <img src={getImageSrc(service.imageUrl)} alt={service.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span style={{ fontSize: 14, opacity: 0.45 }}>Фото услуги появится после загрузки</span>
+                )}
+              </div>
+
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <div
                   style={{
@@ -112,7 +138,7 @@ export default function Home() {
                 >
                   {service.providerLogoUrl ? (
                     <img
-                      src={`${API_BASE}${service.providerLogoUrl}`}
+                      src={getImageSrc(service.providerLogoUrl)}
                       alt={service.providerName}
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
                     />
@@ -128,12 +154,13 @@ export default function Home() {
                   ) : (
                     <div style={{ fontSize: 12, opacity: 0.7 }}>{service.providerName}</div>
                   )}
-                  {service.providerVerificationStatus === "APPROVED" && (
-                    <div style={{ fontSize: 11, color: "#166534" }}>Проверенный провайдер</div>
+                  {service.trustSignal === "VERIFIED_PROVIDER" && (
+                    <div style={{ fontSize: 11, color: "#166534" }}>Сигнал доверия: провайдер проверен</div>
                   )}
                 </div>
               </div>
               <div style={{ fontWeight: 700, marginTop: 10 }}>{service.title}</div>
+              <div style={{ fontSize: 13 }}>{formatRating(service)}</div>
               <div style={{ fontSize: 13, marginTop: 6 }}>{service.description}</div>
               <div style={{ marginTop: 8, fontSize: 13 }}>
                 <b>от {service.priceFrom ?? "—"} ₽</b> • срок от {service.etaDaysFrom ?? "—"} дн.

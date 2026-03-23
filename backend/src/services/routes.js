@@ -31,7 +31,9 @@ servicesRouter.get("/", async (req, res) => {
           orgName: true,
           publicSlug: true,
           logoUrl: true,
-          verificationStatus: true
+          verificationStatus: true,
+          ratingAvg: true,
+          ratingCount: true
         }
       },
       tags: { include: { tag: true } }
@@ -57,6 +59,9 @@ servicesRouter.get("/", async (req, res) => {
       priceFrom: s.priceFrom,
       etaDaysFrom: s.etaDaysFrom,
       imageUrl: s.imageUrl,
+      ratingAvg: s.ratingAvg,
+      ratingCount: s.ratingCount,
+      trustSignal: s.provider.verificationStatus === "APPROVED" ? "VERIFIED_PROVIDER" : null,
       tags: s.tags.map((x) => ({ id: x.tag.id, name: x.tag.name, slug: x.tag.slug }))
     }))
   });
@@ -72,7 +77,9 @@ servicesRouter.get("/:id", async (req, res) => {
           orgName: true,
           publicSlug: true,
           logoUrl: true,
-          verificationStatus: true
+          verificationStatus: true,
+          ratingAvg: true,
+          ratingCount: true
         }
       },
       tags: { include: { tag: true } }
@@ -94,6 +101,9 @@ servicesRouter.get("/:id", async (req, res) => {
       priceFrom: service.priceFrom,
       etaDaysFrom: service.etaDaysFrom,
       imageUrl: service.imageUrl,
+      ratingAvg: service.ratingAvg,
+      ratingCount: service.ratingCount,
+      trustSignal: service.provider.verificationStatus === "APPROVED" ? "VERIFIED_PROVIDER" : null,
       tags: service.tags.map((x) => ({ id: x.tag.id, name: x.tag.name, slug: x.tag.slug }))
     }
   });
