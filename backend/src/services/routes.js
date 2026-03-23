@@ -3,7 +3,6 @@ import { prisma } from "../prisma.js";
 
 export const servicesRouter = Router();
 
-// GET /api/services?search=&tag=&provider=
 servicesRouter.get("/", async (req, res) => {
   const search = (req.query.search || "").toString().trim();
   const tag = (req.query.tag || "").toString().trim();
@@ -26,7 +25,17 @@ servicesRouter.get("/", async (req, res) => {
   const services = await prisma.service.findMany({
     where,
     include: {
-      provider: { select: { id: true, orgName: true } },
+      provider: {
+        select: {
+          id: true,
+          orgName: true,
+          publicSlug: true,
+          logoUrl: true,
+          verificationStatus: true,
+          ratingAvg: true,
+          ratingCount: true
+        }
+      },
       tags: { include: { tag: true } }
     },
     orderBy: { createdAt: "desc" }
@@ -41,37 +50,61 @@ servicesRouter.get("/", async (req, res) => {
       id: s.id,
       providerId: s.providerId,
       providerName: s.provider.orgName,
+      providerSlug: s.provider.publicSlug,
+      providerLogoUrl: s.provider.logoUrl,
+      providerVerificationStatus: s.provider.verificationStatus,
       internalCode: s.internalCode,
       title: s.title,
       description: s.description,
       priceFrom: s.priceFrom,
       etaDaysFrom: s.etaDaysFrom,
       imageUrl: s.imageUrl,
+      ratingAvg: s.ratingAvg,
+      ratingCount: s.ratingCount,
+      trustSignal: s.provider.verificationStatus === "APPROVED" ? "VERIFIED_PROVIDER" : null,
       tags: s.tags.map((x) => ({ id: x.tag.id, name: x.tag.name, slug: x.tag.slug }))
     }))
   });
 });
 
 servicesRouter.get("/:id", async (req, res) => {
-  const id = req.params.id;
-  const s = await prisma.service.findUnique({
-    where: { id },
-    include: { provider: true, tags: { include: { tag: true } } }
+  const service = await prisma.service.findUnique({
+    where: { id: req.params.id },
+    include: {
+      provider: {
+        select: {
+          id: true,
+          orgName: true,
+          publicSlug: true,
+          logoUrl: true,
+          verificationStatus: true,
+          ratingAvg: true,
+          ratingCount: true
+        }
+      },
+      tags: { include: { tag: true } }
+    }
   });
-  if (!s || !s.isActive) return res.status(404).json({ error: "not found" });
+  if (!service || !service.isActive) return res.status(404).json({ error: "not found" });
 
   res.json({
     service: {
-      id: s.id,
-      providerId: s.providerId,
-      providerName: s.provider.orgName,
-      internalCode: s.internalCode,
-      title: s.title,
-      description: s.description,
-      priceFrom: s.priceFrom,
-      etaDaysFrom: s.etaDaysFrom,
-      imageUrl: s.imageUrl,
-      tags: s.tags.map((x) => ({ id: x.tag.id, name: x.tag.name, slug: x.tag.slug }))
+      id: service.id,
+      providerId: service.providerId,
+      providerName: service.provider.orgName,
+      providerSlug: service.provider.publicSlug,
+      providerLogoUrl: service.provider.logoUrl,
+      providerVerificationStatus: service.provider.verificationStatus,
+      internalCode: service.internalCode,
+      title: service.title,
+      description: service.description,
+      priceFrom: service.priceFrom,
+      etaDaysFrom: service.etaDaysFrom,
+      imageUrl: service.imageUrl,
+      ratingAvg: service.ratingAvg,
+      ratingCount: service.ratingCount,
+      trustSignal: service.provider.verificationStatus === "APPROVED" ? "VERIFIED_PROVIDER" : null,
+      tags: service.tags.map((x) => ({ id: x.tag.id, name: x.tag.name, slug: x.tag.slug }))
     }
   });
 });
